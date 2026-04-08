@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-56R1T5Z675"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag() { dataLayer.push(arguments); }
+    gtag('js', new Date());
+    gtag('config', 'G-56R1T5Z675');
+  </script>
+
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content, viewport-fit=cover" />
+  <meta name="theme-color" content="#FF6B35" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="SneakyChat" />
+
+  <!-- PWA Meta Tags -->
+  <meta name="description" content="Anonymous random chat platform for genuine conversations with strangers" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="application-name" content="SneakyChat" />
+
+  <!-- JSON-LD Structured Data -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "SneakyChat",
+    "description": "Anonymous random chat platform for genuine conversations with strangers",
+    "url": "https://sneakychat.app",
+    "applicationCategory": "CommunicationApplication",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "creator": {
+      "@type": "Organization",
+      "name": "SneakyChat"
+    }
+  }
+  </script>
+
+  <!-- Favicons & Icons -->
+  <link rel="icon" href="/favicon.ico" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="manifest" href="/site.webmanifest" />
+  <meta name="apple-mobile-web-app-title" content="SneakyChat" />
+
+  %sveltekit.head%
+</head>
+
+<body>
+  <div id="app">%sveltekit.body%</div>
+</body>
+
+</html>

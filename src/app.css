@@ -1,0 +1,73 @@
+/* ── Google Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@400;600;700&display=swap');
+
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --fox: #FF6B35;
+  --fox-dark: #C94B12;
+  --berry: #7C3AED;
+  --berry-light: #A78BFA;
+  --forest: #0F1A0F;
+  --forest-mid: #1A2E1A;
+  --leaf: #4A7C59;
+  --leaf-light: #6BAE82;
+  --cream: #FFF8F0;
+  --text-muted: #6B8F72;
+  --shadow: 0 4px 24px rgba(0, 0, 0, 0.22);
+  --r: 18px;
+  --green: #00e5a0;
+  --muted: #00e5a0;
+  --accent: #ff3c6e;
+}
+
+
+
+/* ── Body & background overlay ── */
+html,
+body {
+  height: 100dvh;
+  /* overflow: hidden; */
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: var(--forest);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Scrollbar ── */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, .08) transparent;
+}
+
+/* ── Firefly custom property (translate) ── */
+.firefly {
+  --tw-tx: 0px;
+  --tw-ty: 0px;
+}
+
+@layer components {
+  .legal-footer {
+    @apply mt-4 border-t border-white/[.06] pt-5 text-center;
+  }
+
+  .legal-footer-links {
+    @apply mb-2 flex flex-wrap justify-center gap-4 text-[0.82rem] text-cream;
+  }
+
+  .legal-footer-link {
+    @apply text-[var(--leaf-lt)] transition-colors hover:text-fox;
+  }
+
+  .legal-footer-copy {
+    @apply text-[0.78rem] leading-6 text-[var(--leaf-light)];
+  }
+}
