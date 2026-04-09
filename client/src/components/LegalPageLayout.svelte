@@ -92,10 +92,10 @@
                 </p>
                 <p class="legal-footer-copy">
                     Made with 🍇 by <a
-                        href="http://instagram.com/t3lap0ka"
+                        href="http://instagram.com/telap0ka"
                         target="_blank"
                         class=" text-leaf-lt underline"
-                        rel="noopener noreferrer">t3lap0ka</a
+                        rel="noopener noreferrer">telap0ka</a
                     >
                 </p>
             </footer>

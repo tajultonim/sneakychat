@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { berries } from "../stores/gameStore.ts";
-  import Icon from "@iconify/svelte";
-  import animatedFox from "../assets/icon/animated-fox.webp";
+  import { berries } from '../stores/gameStore.ts';
+  import Icon from '@iconify/svelte';
+  import animatedFox from '../assets/icon/animated-fox.webp';
   import {
     messages,
     timerDisplay,
@@ -9,17 +9,18 @@
     showTimerModal,
     partnerWantsExtend,
     myExtendVote,
-  } from "../stores/chatStore.ts";
+    timerRemaining,
+  } from '../stores/chatStore.ts';
 
-  import { partnerStatus } from "../stores/partnerStore.ts";
-  import { socket } from "../lib/socket.ts";
+  import { partnerStatus } from '../stores/partnerStore.ts';
+  import { socket } from '../lib/socket.ts';
 
   type OutgoingMessage = {
     text?: string;
     id: string;
     replyTo?: string | null;
     reaction?: string;
-    type?: "reaction";
+    type?: 'reaction';
   };
 
   const {
@@ -36,7 +37,7 @@
     onExit?: () => void;
   } = $props();
 
-  let inputText = $state("");
+  let inputText = $state('');
   let messagesEl: HTMLDivElement;
   let inputEl: HTMLInputElement;
   let reactionPickerEl = $state<HTMLDivElement | null>(null);
@@ -49,7 +50,7 @@
   let modalTimerArmed = false;
 
   // Titlebar notification
-  let originalTitle = typeof document !== "undefined" ? document.title : "";
+  let originalTitle = typeof document !== 'undefined' ? document.title : '';
   let previousMessageCount = 0;
   let titleFlashInterval: ReturnType<typeof setInterval> | null = null;
   let titleFlashing = false;
@@ -62,13 +63,13 @@
     if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
   });
 
-  if (typeof window !== "undefined") {
-    window.addEventListener("focus", () => {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', () => {
       stopTitleFlash();
     });
   }
 
-  window.addEventListener("click", (e: MouseEvent) => {
+  window.addEventListener('click', (e: MouseEvent) => {
     if (reactionPickerMessageId) {
       if (
         reactionPickerEl &&
@@ -82,13 +83,11 @@
   });
 
   function generateId(length: number): string {
-    if (length <= 0) return "";
+    if (length <= 0) return '';
     const bytes = Math.ceil(length / 2);
     const array = new Uint8Array(bytes);
     crypto.getRandomValues(array);
-    const hex = Array.from(array, (b) => b.toString(16).padStart(2, "0")).join(
-      "",
-    );
+    const hex = Array.from(array, (b) => b.toString(16).padStart(2, '0')).join('');
     return hex.slice(0, length);
   }
 
@@ -100,14 +99,14 @@
       id: generateId(5),
       replyTo: replyToId,
     });
-    inputText = "";
+    inputText = '';
     replyToId = null;
     inputEl.focus();
   }
 
   function sendReaction(messageId: string, reaction: string): void {
     onSendMessage?.({
-      type: "reaction",
+      type: 'reaction',
       id: generateId(5),
       replyTo: messageId,
       reaction,
@@ -116,7 +115,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent): void {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMsg();
     }
@@ -164,7 +163,7 @@
       clearInterval(titleFlashInterval);
       titleFlashInterval = null;
     }
-    if (typeof document !== "undefined") {
+    if (typeof document !== 'undefined') {
       document.title = originalTitle;
     }
     titleFlashing = false;
@@ -176,9 +175,9 @@
     let isFlashing = false;
 
     titleFlashInterval = setInterval(() => {
-      if (typeof document !== "undefined") {
+      if (typeof document !== 'undefined') {
         isFlashing = !isFlashing;
-        document.title = isFlashing ? "📬 New message!" : originalTitle;
+        document.title = isFlashing ? '📬 New message!' : originalTitle;
       }
     }, 500);
 
@@ -190,10 +189,10 @@
     const handleFocus = () => {
       clearTimeout(stopFlashTimeout);
       stopTitleFlash();
-      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener('focus', handleFocus);
     };
 
-    window.addEventListener("focus", handleFocus);
+    window.addEventListener('focus', handleFocus);
   }
 
   $effect(() => {
@@ -210,7 +209,7 @@
     if (currentMessageCount > previousMessageCount && currentMessageCount > 0) {
       const lastMessage = $messages[currentMessageCount - 1];
       // Flash only if new message is from the partner (not system, not self)
-      if (lastMessage.type === "partner" && typeof window !== "undefined") {
+      if (lastMessage.type === 'partner' && typeof window !== 'undefined') {
         if (!document.hasFocus()) {
           startTitleFlash();
         }
@@ -221,8 +220,7 @@
 
   function isEmoji(text: string) {
     // Regex covers most emoji characters
-    const emojiRegex =
-      /^\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*$/u;
+    const emojiRegex = /^\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*$/u;
     return emojiRegex.test(text);
   }
 
@@ -250,16 +248,16 @@
     <div class="flex-1 flex flex-col">
       <span class="font-fredoka text-[.9rem] text-fox">Sneaky Fox</span>
       <span
-        class={`text-[.82rem]  ${$partnerStatus === "online" ? "text-muted" : $partnerStatus === "typing" ? "text-blue-400" : "text-red-500"} `}
+        class={`text-[.82rem]  ${$partnerStatus === 'online' ? 'text-muted' : $partnerStatus === 'typing' ? 'text-blue-400' : 'text-red-500'} `}
       >
         <span
-          class={`inline-block w-[7px] h-[7px] rounded-full ${$partnerStatus === "online" ? "bg-green shadow-[0_0_6px_#00e5a0]" : $partnerStatus === "typing" ? "bg-blue-400 shadow-[0_0_6px_#3b82f6]" : "bg-red-500 shadow-[0_0_6px_#ef4444]"}  mr-1`}
+          class={`inline-block w-[7px] h-[7px] rounded-full ${$partnerStatus === 'online' ? 'bg-green shadow-[0_0_6px_#00e5a0]' : $partnerStatus === 'typing' ? 'bg-blue-400 shadow-[0_0_6px_#3b82f6]' : 'bg-red-500 shadow-[0_0_6px_#ef4444]'}  mr-1`}
         ></span>
-        {$partnerStatus === "online"
-          ? "Online"
-          : $partnerStatus === "typing"
-            ? "Typing..."
-            : "Offline"}
+        {$partnerStatus === 'online'
+          ? 'Online'
+          : $partnerStatus === 'typing'
+            ? 'Typing...'
+            : 'Offline'}
       </span>
     </div>
 
@@ -268,9 +266,7 @@
       class="flex items-center gap-1 bg-[rgba(124,58,237,.12)] border border-[rgba(167,139,250,.2)] rounded-full px-2.5 py-[3px]"
     >
       <span class="text-[.8rem]">🍇</span>
-      <span class="font-fredoka text-[.9rem] text-berry-lt leading-none"
-        >{$berries}</span
-      >
+      <span class="font-fredoka text-[.9rem] text-berry-lt leading-none">{$berries}</span>
     </div>
 
     <!-- Timer -->
@@ -282,11 +278,7 @@
       >
         {$timerDisplay}
       </div>
-      <div
-        class="text-[.55rem] text-muted font-bold uppercase tracking-[.04em]"
-      >
-        left
-      </div>
+      <div class="text-[.55rem] text-muted font-bold uppercase tracking-[.04em]">left</div>
     </div>
 
     <button
@@ -296,12 +288,9 @@
   </div>
 
   <!-- ── Messages ── -->
-  <div
-    class="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-[5px]"
-    bind:this={messagesEl}
-  >
+  <div class="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-[5px]" bind:this={messagesEl}>
     {#each $messages as msg, i (msg.id)}
-      {#if msg.type === "system"}
+      {#if msg.type === 'system'}
         <div
           class="self-center text-[.73rem] text-center whitespace-pre-line text-berry-lt font-semibold px-3 py-1 bg-[rgba(124,58,237,.1)] rounded-full animate-popin"
         >
@@ -316,85 +305,75 @@
           }}
           tabindex="0"
           onkeydown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
+            if (e.key === 'Enter' || e.key === ' ') {
               e.preventDefault();
               inputEl.focus();
             }
           }}
-          class={msg.type === "self"
+          class={msg.type === 'self'
             ? `self-end group ${
-                $messages[i - 1]?.type === "self" &&
-                $messages[i + 1]?.type === "self"
-                  ? "rounded-r-[4px]"
-                  : $messages[i - 1]?.type === "self"
-                    ? "rounded-tr-[4px]"
-                    : $messages[i + 1]?.type === "self"
-                      ? "rounded-br-[4px]"
-                      : "rounded-[14px]"
-              }  ${msg.timestamp ? "hover:mb-5" : ""} ${msg.reaction ? "mb-5" : ""} rounded-[14px] p-2 px-3 relative max-w-[78%] text-[.88rem] leading-relaxed ${isEmoji(msg.text) ? "" : "bg-gradient-to-br from-fox to-fox-dark text-white"} break-words animate-popin`
+                $messages[i - 1]?.type === 'self' && $messages[i + 1]?.type === 'self'
+                  ? 'rounded-r-[4px]'
+                  : $messages[i - 1]?.type === 'self'
+                    ? 'rounded-tr-[4px]'
+                    : $messages[i + 1]?.type === 'self'
+                      ? 'rounded-br-[4px]'
+                      : 'rounded-[20px]'
+              }  ${msg.timestamp ? 'hover:mb-5' : ''} ${msg.reaction ? 'mb-5' : ''} rounded-[20px] p-2 px-3 relative max-w-[78%] text-[.88rem] leading-relaxed ${isEmoji(msg.text) ? '' : 'bg-gradient-to-br from-fox to-fox-dark text-white'} break-words animate-popin`
             : `self-start group ${
-                $messages[i - 1]?.type === "partner" &&
-                $messages[i + 1]?.type === "partner"
-                  ? "rounded-l-[4px]"
-                  : $messages[i - 1]?.type === "partner"
-                    ? "rounded-tl-[4px]"
-                    : $messages[i + 1]?.type === "partner"
-                      ? "rounded-bl-[4px]"
-                      : "rounded-[14px]"
-              } ${msg.timestamp ? "hover:mb-5" : "mb-5"}  ${msg.reaction ? "mb-5" : ""} rounded-[14px]  relative hover:mb-3 max-w-[78%] px-3 py-2 text-[.88rem] leading-relaxed ${isEmoji(msg.text) ? "" : "bg-[#2C352B] text-cream border border-white/[.06]"} break-words animate-popin`}
+                $messages[i - 1]?.type === 'partner' && $messages[i + 1]?.type === 'partner'
+                  ? 'rounded-l-[4px]'
+                  : $messages[i - 1]?.type === 'partner'
+                    ? 'rounded-tl-[4px]'
+                    : $messages[i + 1]?.type === 'partner'
+                      ? 'rounded-bl-[4px]'
+                      : 'rounded-[20px]'
+              } ${msg.timestamp ? 'hover:mb-5' : 'mb-5'}  ${msg.reaction ? 'mb-5' : ''} rounded-[20px]  relative hover:mb-3 max-w-[78%] px-3 py-2 text-[.88rem] leading-relaxed ${isEmoji(msg.text) ? '' : 'bg-[#2C352B] text-cream border border-white/[.06]'} break-words animate-popin`}
         >
-          {#if msg.replyTo && msg.type !== "reaction"}
+          {#if msg.replyTo && msg.type !== 'reaction'}
             <div
               role="button"
               onclick={() => {
-                const el = document.getElementById("msg-" + msg.replyTo);
+                const el = document.getElementById('msg-' + msg.replyTo);
                 if (el) {
-                  el.scrollIntoView({ behavior: "smooth", block: "start" });
+                  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
               }}
               tabindex="0"
               onkeydown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
+                if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  const el = document.getElementById("msg-" + msg.replyTo);
+                  const el = document.getElementById('msg-' + msg.replyTo);
                   if (el) {
-                    el.scrollIntoView({ behavior: "smooth", block: "start" });
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                   }
                 }
               }}
-              class={`${msg.type == "self" ? "self-end" : "self-start"} min-w-[60px] border-l-[3px] pr-2 pl-2 flex flex-col w-full relative p-1`}
+              class={`${msg.type == 'self' ? 'self-end' : 'self-start'} min-w-[60px] border-l-[3px] pr-2 pl-2 flex flex-col w-full relative p-1`}
             >
-              <div
-                class=" font-bold text-gray-200 mb-1 text-xs whitespace-nowrap"
-              >
-                {$messages.find((m) => m.id === msg.replyTo)?.type == "self"
-                  ? "You"
-                  : "Fox"}
+              <div class=" font-bold text-gray-200 mb-1 text-xs whitespace-nowrap">
+                {$messages.find((m) => m.id === msg.replyTo)?.type == 'self' ? 'You' : 'Fox'}
               </div>
-              <div
-                class="text-gray-400 relative whitespace-nowrap text-sm w-full overflow-hidden"
-              >
+              <div class="text-gray-400 relative whitespace-nowrap text-sm w-full overflow-hidden">
                 {$messages.find((m) => m.id === msg.replyTo)?.text}
               </div>
             </div>
           {/if}
-          <span class={`${isEmoji(msg.text) ? "text-7xl" : ""}`}
-            >{msg.text}</span
-          >
+          <span class={`${isEmoji(msg.text) ? 'text-7xl' : ''}`}>{msg.text}</span>
           <span
-            class={`absolute h-[17px] mt-3 flex items-center gap-2 ${msg.type == "self" ? "right-0 flex-row-reverse" : "left-0"} text-xs whitespace-nowrap text-muted`}
+            class={`absolute h-[17px] mt-3 flex items-center gap-2 ${msg.type == 'self' ? 'right-0 flex-row-reverse' : 'left-0'} text-xs whitespace-nowrap text-muted`}
           >
             <span
-              class={`group-hover:inline-block ${msg.timestamp ? "hidden" : "inline-block"} opacity-70`}
+              class={`group-hover:inline-block ${msg.timestamp ? 'hidden' : 'inline-block'} opacity-70`}
               >{msg.timestamp
                 ? new Date(msg.timestamp).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
+                    hour: '2-digit',
+                    minute: '2-digit',
                   })
-                : "⏳"}</span
+                : '⏳'}</span
             >
             <span
-              class={` ${msg.reaction ? "" : "hidden"} inline-block px-1 py-[1px] border rounded-full border-white/[.06] ${msg.type == "self" ? "bg-[#db530f]/10" : "bg-[#2C352B] text-cream"} `}
+              class={` ${msg.reaction ? '' : 'hidden'} inline-block px-1 py-[1px] border rounded-full border-white/[.06] ${msg.type == 'self' ? 'bg-[#db530f]/10' : 'bg-[#2C352B] text-cream'} `}
               >{msg.reaction}</span
             >
           </span>
@@ -406,7 +385,7 @@
           </span> -->
 
           <span
-            class={`${msg.type == "self" ? "-left-2 -translate-x-6" : "-right-2 translate-x-12 flex-row-reverse"} text-white flex group-hover:opacity-100 hover:opacity-100 opacity-0 gap-1 absolute bottom-0 [&>*]:fill-[var(--leaf)] [&>*]:border [&>*]:rounded-full [&>*]:w-[1.5rem] [&>*]:h-[1.5rem] [&>*]:cursor-pointer [&>button>*]:w-full [&>button>*]:h-full [&>button]:flex [&>button]:items-center [&>button]:justify-center [&>button]:p-1`}
+            class={`${msg.type == 'self' ? '-left-2 -translate-x-6' : '-right-2 translate-x-12 flex-row-reverse'} text-white flex group-hover:opacity-100 hover:opacity-100 opacity-0 gap-1 absolute bottom-0 [&>*]:fill-[var(--leaf)] [&>*]:border [&>*]:rounded-full [&>*]:w-[1.5rem] [&>*]:h-[1.5rem] [&>*]:cursor-pointer [&>button>*]:w-full [&>button>*]:h-full [&>button]:flex [&>button]:items-center [&>button]:justify-center [&>button]:p-1`}
           >
             <button
               class=" hover:opacity-80 opacity-40 hover:bg-purple-600/20 rounded-full hover:border-purple-500 [&>*]:hover:text-purple-500 transition-colors"
@@ -418,12 +397,11 @@
             >
               <Icon icon="mdi:reply" />
             </button>
-            {#if msg.type !== "self"}
+            {#if msg.type !== 'self'}
               <button
                 class=" hover:opacity-80 opacity-40 hover:bg-purple-600/20 rounded-full hover:border-purple-500 [&>*]:hover:text-purple-500 transition-colors relative"
                 onclick={() => {
-                  reactionPickerMessageId =
-                    reactionPickerMessageId === msg.id ? null : msg.id;
+                  reactionPickerMessageId = reactionPickerMessageId === msg.id ? null : msg.id;
                 }}
                 bind:this={emojiButtonEl}
               >
@@ -433,21 +411,18 @@
           </span>
           {#if reactionPickerMessageId === msg.id}
             <div
-              class={`absolute bottom-full mb-1 z-50 ${msg.type === "self" ? "right-0" : "left-0"}`}
+              class={`absolute bottom-full mb-1 z-50 ${msg.type === 'self' ? 'right-0' : 'left-0'}`}
               bind:this={reactionPickerEl}
             >
               <div
                 aria-label="picker"
                 class="flex gap-1.5 bg-[rgba(21,40,21,0.95)] border border-white/[.1] rounded-full px-2 py-1.5 animate-popin max-w-[min(92vw,360px)] overflow-x-auto"
               >
-                {#each ["❤️", "😂", "😮", "😢", "🔥", "👍", "🦊"] as reaction}
+                {#each ['❤️', '😂', '😮', '😢', '🔥', '👍', '🦊'] as reaction}
                   <button
-                    class={`${msg.reaction === reaction ? "bg-white/10 px-1 rounded-md" : ""} hover:scale-125 text-2xl transition-transform cursor-pointer bg-transparent border-0 p-0 shrink-0`}
+                    class={`${msg.reaction === reaction ? 'bg-white/10 px-1 rounded-md' : ''} hover:scale-125 text-2xl transition-transform cursor-pointer bg-transparent border-0 p-0 shrink-0`}
                     onclick={() => {
-                      sendReaction(
-                        msg.id,
-                        msg.reaction == reaction ? "" : reaction,
-                      );
+                      sendReaction(msg.id, msg.reaction == reaction ? '' : reaction);
                     }}
                   >
                     {reaction}
@@ -466,13 +441,9 @@
     {#if replyToId}
       <div class=" relative pt-1 pl-4 pr-10">
         <div class="  text-gray-200 mb-1 text-xs">
-          Replying to {$messages.find((m) => m.id === replyToId)?.type == "self"
-            ? "You"
-            : "Fox"}
+          Replying to {$messages.find((m) => m.id === replyToId)?.type == 'self' ? 'You' : 'Fox'}
         </div>
-        <div
-          class="text-gray-400 relative whitespace-nowrap text-sm w-full overflow-hidden"
-        >
+        <div class="text-gray-400 relative whitespace-nowrap text-sm w-full overflow-hidden">
           {$messages.find((m) => m.id === replyToId)?.text}
         </div>
         <button
@@ -497,17 +468,21 @@
         onkeydown={handleKeydown}
         bind:this={inputEl}
         oninput={() => {
-          socket.emit("typing", { isTyping: true });
-
-          if (typingTimer) clearTimeout(typingTimer);
-
+          if (typingTimer) {
+            console.log('clearing typing timer', typingTimer);
+            clearTimeout(typingTimer);
+          } else {
+            socket.emit('typing', { isTyping: true });
+            console.log('emitting typing true');
+          }
           typingTimer = setTimeout(() => {
-            socket.emit("typing", { isTyping: false });
+            socket.emit('typing', { isTyping: false });
+            console.log('emitting typing false');
           }, TYPING_DELAY);
         }}
       />
       <button
-        class="w-[37px] text-white select-none pb-1 h-[37px] shrink-0 bg-fox rounded-full border-0 cursor-pointer text-[.95rem] flex items-center justify-center transition-all hover:bg-fox-dark hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed"
+        class="w-[37px] text-white select-none p-1 h-[37px] shrink-0 bg-fox rounded-full border-0 cursor-pointer text-[.95rem] flex items-center justify-center transition-all hover:bg-fox-dark hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed"
         disabled={$showTimerModal}
         onclick={sendMsg}
       >
@@ -517,16 +492,12 @@
   </div>
 
   <!-- ── Timer-end modal ── -->
-  {#if $showTimerModal}
+  {#if $showTimerModal && !$timerRemaining}
     <div
       class="absolute inset-0 bg-[rgba(10,18,10,.88)] backdrop-blur-md z-50 flex flex-col items-center justify-center gap-4 px-7 py-7 text-center animate-modalin"
     >
       <div class="w-16 h-16">
-        <img
-          src={animatedFox}
-          alt="Fox"
-          class="w-full h-full object-contain animate-bobble"
-        />
+        <img src={animatedFox} alt="Fox" class="w-full h-full object-contain animate-bobble" />
       </div>
 
       <div class="font-fredoka text-[1.5rem] text-cream">Time's up!</div>
@@ -537,25 +508,21 @@
         +5 🍇 berries earned!
       </div>
 
-      <div
-        class="text-[.85rem] whitespace-pre-line text-leaf-lt leading-relaxed max-w-[260px]"
-      >
-        {$partnerStatus === "offline"
-          ? "Other fox is not online :("
-          : "Do you want to keep chatting with this fox? Both of you need to agree."}
+      <div class="text-[.85rem] whitespace-pre-line text-leaf-lt leading-relaxed max-w-[260px]">
+        {$partnerStatus === 'offline'
+          ? 'Other fox is not online :('
+          : 'Do you want to keep chatting with this fox? Both of you need to agree.'}
       </div>
 
       {#if !$myExtendVote}
         <div
           class="inline-flex items-center gap-1.5 bg-[rgba(255,255,255,.05)] border border-white/[.12] rounded-full px-3.5 py-[5px] text-[.75rem] text-muted font-bold"
         >
-          Auto-finishing in <span class="font-fredoka text-cream"
-            >{modalCountdown}s</span
-          >
+          Auto-finishing in <span class="font-fredoka text-cream">{modalCountdown}s</span>
         </div>
       {/if}
 
-      {#if $partnerWantsExtend && $partnerStatus !== "offline"}
+      {#if $partnerWantsExtend && $partnerStatus !== 'offline'}
         <div
           class="flex items-center justify-center gap-1.5 w-full max-w-[300px] bg-[rgba(22,163,74,.12)] border border-[rgba(22,163,74,.25)] rounded-xl px-3.5 py-[7px] text-[.78rem] text-leaf-lt font-bold animate-popin"
         >
@@ -563,14 +530,12 @@
         </div>
       {/if}
 
-      {#if $myExtendVote && $partnerStatus !== "offline"}
-        <div class="text-[.75rem] text-muted font-semibold">
-          ⏳ Waiting for the other fox...
-        </div>
+      {#if $myExtendVote && $partnerStatus !== 'offline'}
+        <div class="text-[.75rem] text-muted font-semibold">⏳ Waiting for the other fox...</div>
       {/if}
 
       <div class="flex gap-2.5 w-full max-w-[300px]">
-        {#if $partnerStatus !== "offline"}
+        {#if $partnerStatus !== 'offline'}
           <button
             class="flex-1 py-[11px] px-2 rounded-xl font-fredoka text-[.95rem] text-white border-0 cursor-pointer flex items-center justify-center gap-1.5
                  bg-gradient-to-br from-berry to-[#5B21B6] shadow-[0_3px_14px_rgba(124,58,237,.35)]
