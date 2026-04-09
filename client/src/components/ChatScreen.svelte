@@ -185,7 +185,7 @@
     // Stop flashing after 5 seconds or when window focuses
     const stopFlashTimeout = setTimeout(() => {
       stopTitleFlash();
-    }, 5000);
+    }, 600000);
 
     const handleFocus = () => {
       clearTimeout(stopFlashTimeout);
