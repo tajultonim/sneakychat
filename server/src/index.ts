@@ -1,5 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
+import cors from 'cors';
 import http from 'http';
 import { Server } from 'socket.io';
 
@@ -12,10 +13,22 @@ import { BROADCAST_INTERVAL } from './constants.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'sneaky-fox-berry-secret-change-in-prod';
 const PORT = process.env.PORT || 3000;
+const SITE_URL = process.env.SITE_URL || 'http://localhost:3000';
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: '*' } });
+const io = new Server(server, {
+  cors: {
+    origin: SITE_URL,
+    credentials: true
+  }
+});
+
+// Setup CORS middleware for Express
+app.use(cors({
+  origin: SITE_URL,
+  credentials: true
+}));
 
 // Setup auth middleware
 setupAuthMiddleware(io);

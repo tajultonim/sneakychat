@@ -13,7 +13,7 @@
     <img
       src={animatedFox}
       alt="Fox"
-      class="w-full h-full object-contain animate-sneak"
+      class="w-full h-full object-contain"
     />
   </div>
 
