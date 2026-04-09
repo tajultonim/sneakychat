@@ -1,6 +1,6 @@
 import { Server } from 'socket.io';
-import { MAX_BERRIES, BROADCAST_INTERVAL } from './constants';
-import { setLastBroadcastTime } from './state';
+import { MAX_BERRIES, BROADCAST_INTERVAL } from './constants.js';
+import { setLastBroadcastTime } from './state.js';
 
 export function clamp(n: number): number {
   return Math.min(MAX_BERRIES, Math.max(0, n));

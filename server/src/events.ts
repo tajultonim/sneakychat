@@ -1,11 +1,11 @@
 import { Server, Socket } from 'socket.io';
-import type { FoxPayload } from './types';
-import { socketPayloads, socketToChat, activeChats, matchmakingQueue } from './state';
-import { COST_MATCH, COST_SKIP, REWARD_EXTEND_BONUS, INITIAL_CHAT_MS, EXTENSION_CHAT_MS } from './constants';
-import { clamp, generateChatId, getCooldownMs } from './utils';
-import { signToken } from './tokens';
-import { removeFromQueue, tryMatch, requeueSocket } from './matchmaking';
-import { startChatTimer, endChat } from './chat';
+import type { FoxPayload } from './types.js';
+import { socketPayloads, socketToChat, activeChats, matchmakingQueue } from './state.js';
+import { COST_MATCH, COST_SKIP, REWARD_EXTEND_BONUS, INITIAL_CHAT_MS, EXTENSION_CHAT_MS } from './constants.js';
+import { clamp, generateChatId, getCooldownMs } from './utils.js';
+import { signToken } from './tokens.js';
+import { removeFromQueue, tryMatch, requeueSocket } from './matchmaking.js';
+import { startChatTimer, endChat } from './chat.js';
 
 export function registerEventHandlers(io: Server, socket: Socket): void {
   // ── findFox ──────────────────────────────────────────────────────────

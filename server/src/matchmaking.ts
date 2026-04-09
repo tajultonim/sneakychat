@@ -1,18 +1,18 @@
 import { Server, Socket } from 'socket.io';
-import type { QueueEntry, Chat } from './types';
+import type { QueueEntry, Chat } from './types.js';
 import {
   matchmakingQueue,
   activeChats,
   socketToChat,
   socketPayloads,
-} from './state';
+} from './state.js';
 import {
   COST_MATCH,
   INITIAL_CHAT_MS,
-} from './constants';
-import { clamp, generateChatId, getCooldownMs } from './utils';
-import { signToken } from './tokens';
-import { startChatTimer } from './chat';
+} from './constants.js';
+import { clamp, generateChatId, getCooldownMs } from './utils.js';
+import { signToken } from './tokens.js';
+import { startChatTimer } from './chat.js';
 
 export function removeFromQueue(socketId: string): void {
   const idx = matchmakingQueue.findIndex((e) => e.socketId === socketId);

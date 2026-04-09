@@ -1,15 +1,16 @@
 import { Server } from 'socket.io';
-import type { Chat } from './types';
-import { Timer } from './types';
-import { activeChats, socketToChat, socketPayloads } from './state';
+import type { Chat } from './types.js';
+import { Timer } from './types.js';
+import { activeChats, socketToChat, socketPayloads } from './state.js';
 import {
   REWARD_TIMER_END,
   REWARD_EXTEND_BONUS,
   REWARD_FINISH,
   EXTENSION_CHAT_MS,
-} from './constants';
-import { clamp } from './utils';
-import { signToken } from './tokens';
+} from './constants.js';
+import { clamp } from './utils.js';
+import { signToken } from './tokens.js';
+import { requeueSocket } from './matchmaking.js';
 
 export function startChatTimer(io: Server, chatId: string, durationMs: number): void {
   const chat = activeChats.get(chatId);
@@ -92,7 +93,6 @@ export function endChat(
 
       if (s) s.emit('berriesUpdate', { token: t, berries: p.berries });
       setImmediate(() => {
-        const { requeueSocket } = require('./matchmaking');
         requeueSocket(io, uid, 'skip');
       });
     } else {
@@ -100,7 +100,6 @@ export function endChat(
         const t = signToken(p);
         if (s) s.emit('berriesUpdate', { token: t, berries: p.berries });
         setImmediate(() => {
-          const { requeueSocket } = require('./matchmaking');
           requeueSocket(io, uid, 'disconnect');
         });
       }

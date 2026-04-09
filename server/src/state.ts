@@ -1,4 +1,4 @@
-import type { QueueEntry, Chat, FoxPayload } from './types';
+import type { QueueEntry, Chat, FoxPayload } from './types.js';
 
 export const matchmakingQueue: QueueEntry[] = [];
 export const activeChats = new Map<string, Chat>();

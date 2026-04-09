@@ -1,6 +1,6 @@
 import { Server } from 'socket.io';
-import type { FoxPayload } from './types';
-import { verifyToken, freshPayload } from './tokens';
+import type { FoxPayload } from './types.js';
+import { verifyToken, freshPayload } from './tokens.js';
 
 export function setupAuthMiddleware(io: Server): void {
   io.use((socket: any, next: any) => {

@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
-import type { FoxPayload } from './types';
-import { STARTING_BERRIES } from './constants';
+import type { FoxPayload } from './types.js';
+import { STARTING_BERRIES } from './constants.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'sneaky-fox-berry-secret-change-in-prod';
 

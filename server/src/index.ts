@@ -3,12 +3,12 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 
-import { socketPayloads, lastBroadcastTime, setLastBroadcastTime } from './state';
-import { setupAuthMiddleware } from './middleware';
-import { registerEventHandlers } from './events';
-import { broadcastOnlineCount, shouldBroadcast } from './utils';
-import { signToken, freshPayload } from './tokens';
-import { BROADCAST_INTERVAL } from './constants';
+import { socketPayloads, lastBroadcastTime, setLastBroadcastTime } from './state.js';
+import { setupAuthMiddleware } from './middleware.js';
+import { registerEventHandlers } from './events.js';
+import { broadcastOnlineCount, shouldBroadcast } from './utils.js';
+import { signToken, freshPayload } from './tokens.js';
+import { BROADCAST_INTERVAL } from './constants.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'sneaky-fox-berry-secret-change-in-prod';
 const PORT = process.env.PORT || 3000;
