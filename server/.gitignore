@@ -22,7 +22,7 @@ lerna-debug.log*
 .env.local
 .env.*.local
 .env.production
-.emv.production
+.env.development
 
 # IDE & Editor
 .vscode/*
