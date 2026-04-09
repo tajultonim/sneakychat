@@ -1,12 +1,3 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
-
 # Dependencies
 node_modules/
 .pnp
@@ -15,18 +6,29 @@ node_modules/
 # Build outputs
 dist/
 build/
-.svelte-kit/
+*.tsbuildinfo
 
-# Environment variables (secrets — never commit)
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Environment variables (secrets — never commit actual .env files)
 .env
 .env.local
 .env.*.local
+.env.production
 
-# IDE
+# IDE & Editor
 .vscode/*
 !.vscode/settings.json
 !.vscode/extensions.json
 .idea/
+*.suo
 *.swp
 *.swo
 *~
@@ -38,3 +40,4 @@ Thumbs.db
 # Temporary
 *.tmp
 temp/
+
