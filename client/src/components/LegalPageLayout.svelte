@@ -20,7 +20,7 @@
 <Fireflies count={14} />
 <nav class="top-nav">
     <div
-        class="max-w-[860px] justify-between items-center flex w-full border-b border-white/[.08] pb-4 px-2"
+        class="max-w-[860px] justify-between items-center flex w-full border-b border-white/[.08] pb-4 px-4"
     >
         <a
             class="nav-logo whitespace-nowrap flex items-center gap-1.5"
@@ -30,9 +30,9 @@
             SneakyChat
         </a>
         <div class="nav-links">
-            <a href="/about.html" class="active">About</a>
-            <a href="/privacy.html">Privacy</a>
-            <a href="/terms.html">Terms</a>
+            <a href="/about" class="active">About</a>
+            <a href="/privacy">Privacy</a>
+            <a href="/terms">Terms</a>
         </div>
     </div>
 </nav>

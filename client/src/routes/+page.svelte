@@ -282,6 +282,8 @@
     sock.on('chatEnded', (d: unknown) => {
       const { token, berries: b, msg } = d as { token: string; berries: number; msg: string };
       localStorage.setItem('sneaky_token', token);
+      localStorage.removeItem('roomId');
+      roomId.set('');
       updateBerryUI(b);
       showSkipConfirm = false;
       screen = 'idle';
@@ -292,6 +294,8 @@
     sock.on('idle', (d: unknown) => {
       screen = 'idle';
       toastStore.add((d as { msg: string }).msg);
+      roomId.set('');
+      localStorage.removeItem('roomId');
     });
     sock.on('error', (d: unknown) => toastStore.add('⚠️ ' + (d as { msg: string }).msg));
     sock.on('noberries', (d: unknown) => {

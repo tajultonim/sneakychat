@@ -18,7 +18,7 @@
     }
 
     .nav-links a {
-        @apply text-muted text-[0.82rem] uppercase tracking-[0.06em] font-bold no-underline transition-colors duration-200;
+        @apply text-muted text-[0.75rem] uppercase tracking-[0.06em] font-bold no-underline transition-colors duration-200;
     }
 
     .nav-links a:hover {
