@@ -1,4 +1,5 @@
 /// <reference lib="webworker" />
+/// <reference types="@sveltejs/kit" />
 declare const self: ServiceWorkerGlobalScope;
 
 import { build, files, version } from '$service-worker';
@@ -50,8 +51,9 @@ self.addEventListener('fetch', (event: FetchEvent) => {
             return response;
           }
 
-          const cache = caches.open(CACHE);
-          cache.then((c) => c.put(event.request, response.clone()));
+          // Clone immediately; cloning later can fail once the browser starts consuming the body.
+          const responseToCache = response.clone();
+          event.waitUntil(caches.open(CACHE).then((c) => c.put(event.request, responseToCache)));
 
           return response;
         })
@@ -61,7 +63,8 @@ self.addEventListener('fetch', (event: FetchEvent) => {
           if (accept?.includes('text/html')) {
             return caches.match('/index.html') as Promise<Response>;
           }
-          throw new Error('Offline - no cache available');
+          // Return cached asset or fail gracefully for offline
+          return caches.match(event.request) as Promise<Response>;
         });
     })
   );
