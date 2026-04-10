@@ -26,6 +26,9 @@
   import ToastManager from '$components/ToastManager.svelte';
   import ExitConfirmModal from '$components/ExitConfirmModal.svelte';
   import { partnerStatus } from '$stores/partnerStore';
+  import { browser } from '$app/environment';
+  import { page } from '$app/state';
+  import { goto } from '$app/navigation';
 
   type Screen = 'idle' | 'searching' | 'chat';
 
@@ -37,6 +40,25 @@
   let showSkipConfirm = false;
   let showExitConfirm = false;
   let disposeHomeRuntime: (() => void) | null = null;
+
+  $: {
+    if (browser) {
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute('content', screen == 'chat' ? '#272718' : '#0F1A0F');
+    }
+  }
+
+  onMount(() => {
+    const param = page.url.searchParams.get('screen');
+
+    if (param == 'chat') {
+      handleFindFox();
+      const url = new URL(page.url);
+      url.searchParams.delete('screen');
+      goto(url, { replaceState: true });
+      screen = 'searching';
+    }
+  });
 
   function initHomeRuntime(): () => void {
     const sock = connectSocket();
@@ -237,7 +259,7 @@
       localStorage.setItem('sneaky_token', token);
       updateBerryUI(b);
       chatStore.extend(durationMs, msg);
-      toastStore.add(msg, 3500);
+      toastStore.add(msg);
     });
 
     sock.on('partner-status', (d: unknown) => {
@@ -418,7 +440,7 @@
   <CooldownBadge />
 
   <div
-    class={`bg-[rgba(255,248,240,0.035)] border border-white/[.07] ${screen == 'chat' ? 'sm:rounded-[18px]' : 'rounded-[18px]'}  backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,.22)]`}
+    class={`bg-[rgba(255,248,240,0.035)] sm:border border-white/[.07] ${screen == 'chat' ? 'sm:rounded-[18px]' : 'rounded-[18px]'} overflow-hidden  backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,.22)]`}
   >
     {#if screen === 'idle'}
       <IdleScreen on:findFox={handleFindFox} />

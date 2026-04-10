@@ -160,7 +160,7 @@ export const chatStore = {
     myExtendVote.set(false);
     partnerWantsExtend.set(false);
     showTimerModal.set(false);
-    if (msg) messages.update((ms) => [...ms, { id: (++_msgId).toString(), text: msg, type: 'system' }]);
+    if (msg) messages.update((ms) => [...ms, { id: generateChatId(), text: msg, type: 'system' }]);
     _startTimer(durationMs);
   },
 

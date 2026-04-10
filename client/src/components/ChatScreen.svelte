@@ -41,7 +41,7 @@
   let messagesEl: HTMLDivElement;
   let inputEl: HTMLInputElement;
   let reactionPickerEl = $state<HTMLDivElement | null>(null);
-  let emojiButtonEl = $state<HTMLButtonElement | null>(null);
+  let sendButtonIconEl = $state<HTMLSpanElement | null>(null);
   let replyToId = $state<string | null>(null);
   let reactionPickerMessageId = $state<string | null>(null);
   let modalCountdown = $state(10);
@@ -56,6 +56,7 @@
   let titleFlashing = false;
 
   let typingTimer: ReturnType<typeof setTimeout> | null = null;
+  let isTyping = false;
   const TYPING_DELAY = 1000;
 
   $effect(() => {
@@ -69,13 +70,21 @@
     });
   }
 
+  function flyPlane() {
+    if (sendButtonIconEl?.classList.contains('animate-fly')) return; // prevent spamming
+    void sendButtonIconEl?.offsetWidth; // restart animation trick
+    sendButtonIconEl?.classList.add('animate-fly');
+    setTimeout(() => {
+      sendButtonIconEl?.classList.remove('animate-fly');
+    }, 300);
+  }
+
   window.addEventListener('click', (e: MouseEvent) => {
     if (reactionPickerMessageId) {
       if (
         reactionPickerEl &&
         !reactionPickerEl.contains(e.target as Node) &&
-        emojiButtonEl &&
-        !emojiButtonEl.contains(e.target as Node)
+        !(e.target as HTMLElement | null)?.closest('.emoji-button')
       ) {
         reactionPickerMessageId = null;
       }
@@ -94,6 +103,7 @@
   function sendMsg(): void {
     const text = inputText.trim();
     if (!text || $showTimerModal) return;
+
     onSendMessage?.({
       text,
       id: generateId(5),
@@ -102,6 +112,7 @@
     inputText = '';
     replyToId = null;
     inputEl.focus();
+    flyPlane();
   }
 
   function sendReaction(messageId: string, reaction: string): void {
@@ -230,6 +241,7 @@
       stopTitleFlash();
     };
   });
+
 </script>
 
 <!-- Outer wrapper fills the card height -->
@@ -315,7 +327,7 @@
                 $messages[i - 1]?.type === 'self' && $messages[i + 1]?.type === 'self'
                   ? 'rounded-r-[4px]'
                   : $messages[i - 1]?.type === 'self'
-                    ? 'rounded-tr-[4px]'
+                    ? 'rounded-tr-[4px] mb-1'
                     : $messages[i + 1]?.type === 'self'
                       ? 'rounded-br-[4px]'
                       : 'rounded-[20px]'
@@ -324,7 +336,7 @@
                 $messages[i - 1]?.type === 'partner' && $messages[i + 1]?.type === 'partner'
                   ? 'rounded-l-[4px]'
                   : $messages[i - 1]?.type === 'partner'
-                    ? 'rounded-tl-[4px]'
+                    ? 'rounded-tl-[4px] mb-1'
                     : $messages[i + 1]?.type === 'partner'
                       ? 'rounded-bl-[4px]'
                       : 'rounded-[20px]'
@@ -354,12 +366,14 @@
               <div class=" font-bold text-gray-200 mb-1 text-xs whitespace-nowrap">
                 {$messages.find((m) => m.id === msg.replyTo)?.type == 'self' ? 'You' : 'Fox'}
               </div>
-              <div class="text-gray-400 relative whitespace-nowrap text-sm w-full overflow-hidden">
+              <div
+                class={`${msg.type == 'self' ? 'text-gray-200/[0.95]' : 'text-gray-200/[0.8]'} relative whitespace-nowrap text-sm w-full overflow-hidden`}
+              >
                 {$messages.find((m) => m.id === msg.replyTo)?.text}
               </div>
             </div>
           {/if}
-          <span class={`${isEmoji(msg.text) ? 'text-7xl' : ''}`}>{msg.text}</span>
+          <span class={`${isEmoji(msg.text) ? 'text-7xl' : ''}  select-text`}>{msg.text}</span>
           <span
             class={`absolute h-[17px] mt-3 flex items-center gap-2 ${msg.type == 'self' ? 'right-0 flex-row-reverse' : 'left-0'} text-xs whitespace-nowrap text-muted`}
           >
@@ -399,11 +413,10 @@
             </button>
             {#if msg.type !== 'self'}
               <button
-                class=" hover:opacity-80 opacity-40 hover:bg-purple-600/20 rounded-full hover:border-purple-500 [&>*]:hover:text-purple-500 transition-colors relative"
+                class=" emoji-button hover:opacity-80 opacity-40 hover:bg-purple-600/20 rounded-full hover:border-purple-500 [&>*]:hover:text-purple-500 transition-colors relative"
                 onclick={() => {
                   reactionPickerMessageId = reactionPickerMessageId === msg.id ? null : msg.id;
                 }}
-                bind:this={emojiButtonEl}
               >
                 <Icon icon="mdi:emoji" />
               </button>
@@ -439,7 +452,7 @@
   <!-- ── Input row ── -->
   <div class=" border-t border-white/[.05] bg-black/[.12]">
     {#if replyToId}
-      <div class=" relative pt-1 pl-4 pr-10">
+      <div class=" relative pt-2 pl-4 pr-10">
         <div class="  text-gray-200 mb-1 text-xs">
           Replying to {$messages.find((m) => m.id === replyToId)?.type == 'self' ? 'You' : 'Fox'}
         </div>
@@ -468,25 +481,27 @@
         onkeydown={handleKeydown}
         bind:this={inputEl}
         oninput={() => {
-          if (typingTimer) {
-            console.log('clearing typing timer', typingTimer);
+          if (isTyping) {
             clearTimeout(typingTimer);
           } else {
             socket.emit('typing', { isTyping: true });
-            console.log('emitting typing true');
+            isTyping = true;
           }
           typingTimer = setTimeout(() => {
             socket.emit('typing', { isTyping: false });
             console.log('emitting typing false');
+            isTyping = false;
           }, TYPING_DELAY);
         }}
       />
       <button
-        class="w-[37px] text-white select-none p-1 h-[37px] shrink-0 bg-fox rounded-full border-0 cursor-pointer text-[.95rem] flex items-center justify-center transition-all hover:bg-fox-dark hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed"
-        disabled={$showTimerModal}
+        class="w-[37px] text-white overflow-hidden select-none pl-1 pb-1 h-[37px] shrink-0 bg-fox rounded-full border-0 cursor-pointer text-[.95rem] flex items-center justify-center transition-all hover:bg-fox-dark hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed"
+        disabled={$showTimerModal || !inputText.trim()}
         onclick={sendMsg}
       >
-        <Icon icon="wordpress:send" class=" w-full h-full -rotate-45" />
+        <span bind:this={sendButtonIconEl} class=" w-full h-full -rotate-45">
+          <Icon icon="wordpress:send" class=" w-full h-full" />
+        </span>
       </button>
     </div>
   </div>

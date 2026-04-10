@@ -46,6 +46,12 @@ body::before {
 * {
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, .08) transparent;
+  user-select: none;
+}
+
+img {
+  user-select: none;
+  pointer-events: none;
 }
 
 /* ── Firefly custom property (translate) ── */
@@ -69,5 +75,24 @@ body::before {
 
   .legal-footer-copy {
     @apply text-[0.78rem] leading-6 text-[var(--leaf-light)];
+  }
+
+  .flyaway {
+    animation: flyAway 0.6s ease forwards;
+  }
+}
+
+@keyframes flyAway {
+  0% {
+    transform: scale(1);
+  }
+
+  20% {
+    transform: scale(0.9);
+  }
+
+  100% {
+    transform: translate(40px, -40px) rotate(45deg);
+    opacity: 0;
   }
 }

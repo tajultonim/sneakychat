@@ -14,21 +14,21 @@ import { BROADCAST_INTERVAL } from './constants.js';
 const JWT_SECRET = process.env.JWT_SECRET || 'sneaky-fox-berry-secret-change-in-prod';
 const PORT = process.env.PORT || 3000;
 const SITE_URL = process.env.SITE_URL || 'http://localhost:3000';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+const corsConfig = {
+  origin: IS_PRODUCTION ? SITE_URL : true,
+  credentials: true,
+};
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: {
-    origin: SITE_URL,
-    credentials: true
-  }
+  cors: corsConfig,
 });
 
 // Setup CORS middleware for Express
-app.use(cors({
-  origin: SITE_URL,
-  credentials: true
-}));
+app.use(cors(corsConfig));
 
 // Setup auth middleware
 setupAuthMiddleware(io);

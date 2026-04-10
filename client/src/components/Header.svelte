@@ -6,7 +6,7 @@
 </script>
 
 {#if !hidden}
-  <div class="text-center mb-3.5 mt-3">
+  <div class="text-center mb-3.5 mt-7">
     <div
       class="font-fredoka text-[2rem] text-fox tracking-wide drop-shadow-[0_2px_12px_rgba(255,107,53,.4)] flex items-center justify-center gap-2"
     >

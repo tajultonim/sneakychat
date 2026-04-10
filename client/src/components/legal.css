@@ -1,5 +1,9 @@
 @tailwind components;
 
+* {
+    user-select: text !important;
+}
+
 @layer components {
 
     /* Nav */
