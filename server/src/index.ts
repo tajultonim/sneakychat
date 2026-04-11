@@ -7,6 +7,7 @@ import { Server } from 'socket.io';
 import { socketPayloads, lastBroadcastTime, setLastBroadcastTime } from './state.js';
 import { setupAuthMiddleware } from './middleware.js';
 import { registerEventHandlers } from './events.js';
+import { registerGameEventHandlers } from './gameEvents.js';
 import { broadcastOnlineCount, shouldBroadcast } from './utils.js';
 import { signToken, freshPayload } from './tokens.js';
 import { BROADCAST_INTERVAL } from './constants.js';
@@ -56,6 +57,7 @@ io.on('connection', (socket) => {
 
   // Register all event handlers for this socket
   registerEventHandlers(io, socket);
+  registerGameEventHandlers(io, socket);
 });
 
 // Start server

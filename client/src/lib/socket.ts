@@ -21,7 +21,7 @@ import { browser } from '$app/environment';
 let _socket: Socket | null = null;
 
 export function connectSocket(): Socket {
-  const token = browser ? localStorage.getItem('sneaky_token') ?? undefined : undefined;
+  const token = browser ? (localStorage.getItem('sneaky_token') ?? undefined) : undefined;
   _socket = io(import.meta.env.VITE_SOCKET_URL, { auth: { token } });
   return _socket;
 }
@@ -37,13 +37,11 @@ export const socket = {
   off(event: string, handler: (...args: unknown[]) => void): void {
     _socket?.off(event, handler);
   },
-  id: (_socket as unknown as Socket)?.id,
+  get id(): string | undefined {
+    return _socket?.id;
+  },
   disconnect: () => _socket?.disconnect(),
   emitwithtimeout(event: string, data?: unknown, callback?: (...args: unknown[]) => void): void {
     _socket?.timeout(3000).emit(event, data, callback);
   },
 };
-
-
-//TODO: impliment queued message
-//TODO: emoji fix

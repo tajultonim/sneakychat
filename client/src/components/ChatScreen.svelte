@@ -1,5 +1,15 @@
 <script lang="ts">
   import { berries } from '../stores/gameStore.ts';
+  import {
+    activeGame,
+    gameProposal,
+    hasGameProposal,
+    hasActiveGame,
+    gameNames,
+    gameDescriptions,
+    availableGames,
+    gameSize,
+  } from '../stores/gameStore.ts';
   import Icon from '@iconify/svelte';
   import animatedFox from '../assets/icon/animated-fox.webp';
   import {
@@ -14,6 +24,9 @@
 
   import { partnerStatus } from '../stores/partnerStore.ts';
   import { socket } from '../lib/socket.ts';
+  import GameProposal from './games/GameProposal.svelte';
+  import GameBoard from './games/GameBoard.svelte';
+  import { onMount } from 'svelte';
 
   type OutgoingMessage = {
     text?: string;
@@ -48,6 +61,7 @@
   let modalCountdownInterval: ReturnType<typeof setInterval> | null = null;
   let modalAutoFinishTimeout: ReturnType<typeof setTimeout> | null = null;
   let modalTimerArmed = false;
+  let gameMenuOpen = $state(false);
 
   // Titlebar notification
   let originalTitle = typeof document !== 'undefined' ? document.title : '';
@@ -59,9 +73,22 @@
   let isTyping = false;
   const TYPING_DELAY = 1000;
 
+  onMount(() => {
+    gameSize.set('normal'); // Reset game size when component mounts
+    return () => {
+      if (typingTimer) clearTimeout(typingTimer);
+    };
+  });
+
   $effect(() => {
     $messages.length;
     if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+  });
+
+  $effect(() => {
+    if ($gameSize == 'normal') {
+      if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
   });
 
   if (typeof window !== 'undefined') {
@@ -235,13 +262,23 @@
     return emojiRegex.test(text);
   }
 
+  function proposeGame(gameType: string) {
+    socket.emit('proposeGame', { gameType });
+    gameMenuOpen = false;
+  }
+
+  $effect(() => {
+    if ($hasActiveGame && gameMenuOpen) {
+      gameMenuOpen = false;
+    }
+  });
+
   $effect(() => {
     return () => {
       clearModalTimer();
       stopTitleFlash();
     };
   });
-
 </script>
 
 <!-- Outer wrapper fills the card height -->
@@ -449,6 +486,15 @@
     {/each}
   </div>
 
+  <!-- ── Game display ── -->
+  {#if ($activeGame && $gameSize == 'normal') || $gameSize == 'maximized'}
+    <div
+      class={`flex-1 overflow-y-auto px-3 py-3 bg-black/20 border-t border-white/[.06] ${($gameSize as any) == 'maximized' ? 'absolute bottom-16 w-full max-h-[100dvh] pt-28 overflow-scroll' : ''}`}
+    >
+      <GameBoard />
+    </div>
+  {/if}
+
   <!-- ── Input row ── -->
   <div class=" border-t border-white/[.05] bg-black/[.12]">
     {#if replyToId}
@@ -470,6 +516,15 @@
       </div>
     {/if}
     <div class="flex relative gap-2 px-2.5 py-2 shrink-0">
+      <button
+        class="w-[37px] h-[37px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
+        disabled={$showTimerModal || $hasActiveGame}
+        onclick={() => (gameMenuOpen = !gameMenuOpen)}
+        aria-label="Open game menu"
+      >
+        🎮
+      </button>
+
       <input
         class="flex-1 bg-white/[.07] border border-white/[.09] rounded-full px-4 py-[9px] text-cream font-nunito text-[.88rem] outline-none placeholder-white/20 focus:border-[rgba(255,107,53,.45)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         type="text"
@@ -505,6 +560,55 @@
       </button>
     </div>
   </div>
+
+  <!-- ── Game menu grid ── -->
+  {#if gameMenuOpen}
+    <div
+      class="absolute bottom-[58px] left-3 z-40 bg-gradient-to-br from-[#2C352B] to-[#1a1f1a] border border-white/[.1] rounded-xl shadow-lg p-3 min-w-[280px]"
+    >
+      <div class="text-xs text-muted font-bold uppercase tracking-widest px-1 py-1 mb-2">
+        🎮 Select a Game
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        {#each $availableGames as gameType}
+          <button
+            onclick={() => proposeGame(gameType)}
+            class="group relative px-3 py-3 rounded-lg border border-white/[.08] bg-[rgba(124,58,237,.08)] hover:bg-[rgba(124,58,237,.15)] hover:border-berry-lt/40 transition-all duration-200 flex flex-col items-center gap-2 text-center hover:scale-105"
+          >
+            <div class="text-2xl transition-transform group-hover:scale-110">
+              {#if gameType === 'tictactoe'}
+                ❎
+              {:else if gameType === 'connect4'}
+                🟡
+              {:else if gameType === 'dotsAndBoxes'}
+                🧩
+              {:else if gameType === 'rockPaperScissors'}
+                ✌️
+              {/if}
+            </div>
+            <div class="flex flex-col gap-1 w-full">
+              <div class="text-[0.75rem] font-bold text-cream group-hover:text-berry-lt transition">
+                {gameNames[gameType]}
+              </div>
+              <div
+                class="text-[0.6rem] text-muted/70 group-hover:text-white/50 transition line-clamp-2"
+              >
+                {gameDescriptions[gameType]}
+              </div>
+            </div>
+          </button>
+        {/each}
+      </div>
+    </div>
+  {/if}
+
+  <!-- ── Game Proposal Modal ── -->
+  <GameProposal />
+
+  <!-- ── Minimized Game Display ── -->
+  {#if $activeGame && $gameSize === 'minimized'}
+    <GameBoard />
+  {/if}
 
   <!-- ── Timer-end modal ── -->
   {#if $showTimerModal && !$timerRemaining}
