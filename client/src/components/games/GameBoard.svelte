@@ -28,11 +28,13 @@
     if (!gameId) return;
     socket.emit('quitGame', { gameId });
     activeGame.set(null);
+    gameSize.set('normal');
     toastStore.add('You left the game.');
   }
 
   function handleCloseGame(): void {
     activeGame.set(null);
+    gameSize.set('normal');
     toastStore.add('Game closed.');
   }
 

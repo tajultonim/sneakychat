@@ -40,32 +40,44 @@ self.addEventListener('fetch', (event: FetchEvent) => {
   }
 
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      if (response) {
-        return response;
+    (async (): Promise<Response> => {
+      const cachedResponse = await caches.match(event.request);
+
+      if (cachedResponse) {
+        // Return cached immediately and fetch in background
+        fetch(event.request)
+          .then((response) => {
+            if (response && response.status === 200 && response.type !== 'error') {
+              const responseToCache = response.clone();
+              caches.open(CACHE).then((c) => c.put(event.request, responseToCache));
+            }
+          })
+          .catch(() => {});
+
+        return cachedResponse;
       }
 
-      return fetch(event.request)
-        .then((response) => {
-          if (!response || response.status !== 200 || response.type === 'error') {
-            return response;
-          }
+      // No cache, wait for fetch
+      try {
+        const response = await fetch(event.request);
 
-          // Clone immediately; cloning later can fail once the browser starts consuming the body.
+        if (response && response.status === 200 && response.type !== 'error') {
           const responseToCache = response.clone();
-          event.waitUntil(caches.open(CACHE).then((c) => c.put(event.request, responseToCache)));
+          caches.open(CACHE).then((c) => c.put(event.request, responseToCache));
+        }
 
-          return response;
-        })
-        .catch(() => {
-          // Return a fallback for offline navigation
-          const accept = event.request.headers.get('accept');
-          if (accept?.includes('text/html')) {
-            return caches.match('/index.html') as Promise<Response>;
-          }
-          // Return cached asset or fail gracefully for offline
-          return caches.match(event.request) as Promise<Response>;
-        });
-    })
+        return response;
+      } catch {
+        // Fallback for HTML requests
+        const accept = event.request.headers.get('accept');
+        if (accept?.includes('text/html')) {
+          const fallback = await caches.match('/index.html');
+          if (fallback) return fallback;
+        }
+
+        // Return error response
+        return new Response('Network error', { status: 503 });
+      }
+    })()
   );
 });

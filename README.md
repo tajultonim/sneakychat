@@ -2,7 +2,7 @@
 
 Anonymous peer-to-peer chat app with a token-based economy. Match with random foxes, chat for a limited time, earn berries, and come back for more.
 
-Live demo: *[your deployment URL]*
+Live demo: [https://sneakychat.pages.dev](https://sneakychat.pages.dev)
 
 ---
 
@@ -74,11 +74,13 @@ Visit **http://localhost:5173** (client auto-proxies `/socket.io` to server on :
 ### Run Separately (Optional)
 
 **Terminal 1 — Server:**
+
 ```bash
 npm run dev:server      # → http://localhost:3000
 ```
 
 **Terminal 2 — Client:**
+
 ```bash
 npm run dev:client      # → http://localhost:5173
 ```
@@ -97,16 +99,16 @@ npm start                # Runs production server → http://localhost:3000
 
 ### NPM Scripts Reference
 
-| Command | What it does |
-|---------|-------------|
-| `npm install` | Install client & server dependencies |
-| `npm run dev` | Run both together (parallel) |
-| `npm run dev:client` | Run client only (Svelte dev server) |
-| `npm run dev:server` | Run server only (with tsx live reload) |
-| `npm run build` | Build both for production |
-| `npm run build:client` | Build client only → `client/build/` |
-| `npm run build:server` | Build server only → `server/dist/` |
-| `npm run check` | Type-check both (svelte-check + tsc) |
+| Command                | What it does                           |
+| ---------------------- | -------------------------------------- |
+| `npm install`          | Install client & server dependencies   |
+| `npm run dev`          | Run both together (parallel)           |
+| `npm run dev:client`   | Run client only (Svelte dev server)    |
+| `npm run dev:server`   | Run server only (with tsx live reload) |
+| `npm run build`        | Build both for production              |
+| `npm run build:client` | Build client only → `client/build/`    |
+| `npm run build:server` | Build server only → `server/dist/`     |
+| `npm run check`        | Type-check both (svelte-check + tsc)   |
 
 ### Type Checking
 
@@ -141,6 +143,7 @@ sneakychat/
 ### Environment Variables
 
 **Client `(.env.development`)**
+
 ```env
 # Socket.io server URL during development
 VITE_SOCKET_URL=http://localhost:3000
@@ -148,6 +151,7 @@ VITE_ENV=development
 ```
 
 **Client (`.env.production`)**
+
 ```env
 # Update this with your actual domain before deploying
 VITE_SOCKET_URL=https://yourdomain.com
@@ -155,6 +159,7 @@ VITE_ENV=production
 ```
 
 **Server (`.env.development`)**
+
 ```env
 # Development JWT secret (safe to commit — not used in production)
 JWT_SECRET=sneaky-fox-berry-secret-change-in-prod
@@ -163,6 +168,7 @@ NODE_ENV=development
 ```
 
 **Server (`.env.production`)**
+
 ```env
 # For production: set JWT_SECRET via environment variables (not in file!)
 JWT_SECRET=your-strong-random-secret-min-32-chars
@@ -184,6 +190,7 @@ cp server/.env.development server/.env.local
 ### Security Best Practices
 
 ✅ **DO:**
+
 - Commit `.env.development` with safe/test values
 - Commit `.env.production` as **template** (no real secrets)
 - Use `.env.local` for personal overrides (git-ignored)
@@ -191,6 +198,7 @@ cp server/.env.development server/.env.local
 - Set production secrets via environment variables or platform secrets manager
 
 ❌ **DON'T:**
+
 - Commit real secrets or `.env.local` files
 - Use same secret for dev & production
 - Hardcode secrets in code
@@ -202,24 +210,24 @@ cp server/.env.development server/.env.local
 
 ### Client
 
-| Tech | Role |
-|---|---|
-| **Svelte 5** | Reactive UI components & logic |
-| **TypeScript** | Type-safe components & stores |
-| **Tailwind CSS v3** | Utility-first styling (zero scoped styles) |
-| **Vite 5** | Dev server, HMR, optimized builds |
-| **SvelteKit** | Routing, SSR, static export |
-| **Socket.io Client** | Real-time bidirectional comms |
+| Tech                 | Role                                       |
+| -------------------- | ------------------------------------------ |
+| **Svelte 5**         | Reactive UI components & logic             |
+| **TypeScript**       | Type-safe components & stores              |
+| **Tailwind CSS v3**  | Utility-first styling (zero scoped styles) |
+| **Vite 5**           | Dev server, HMR, optimized builds          |
+| **SvelteKit**        | Routing, SSR, static export                |
+| **Socket.io Client** | Real-time bidirectional comms              |
 
 ### Server
 
-| Tech | Role |
-|---|---|
-| **Node.js** | JavaScript runtime |
+| Tech           | Role                          |
+| -------------- | ----------------------------- |
+| **Node.js**    | JavaScript runtime            |
 | **Express.js** | HTTP framework & basic routes |
-| **Socket.io** | WebSocket abstraction |
-| **JWT** | Stateless user session tokens |
-| **TypeScript** | Type-safe server logic |
+| **Socket.io**  | WebSocket abstraction         |
+| **JWT**        | Stateless user session tokens |
+| **TypeScript** | Type-safe server logic        |
 
 ---
 
@@ -262,14 +270,14 @@ Chat Screen (2 min timer)
 
 Every user starts with **55 berries** (max: 100).
 
-| Action | Cost/Reward |
-|---|---|
+| Action               | Cost/Reward        |
+| -------------------- | ------------------ |
 | Start a matched chat | -1 🍇 (both users) |
-| Chat timer expires | +5 🍇 (both users) |
-| Both extend chat | +5 🍇 (both users) |
+| Chat timer expires   | +5 🍇 (both users) |
+| Both extend chat     | +5 🍇 (both users) |
 | Complete/finish chat | +0 🍇 (both users) |
-| Skip active chat | -0 🍇 (skippers) |
-| Skip in queue | -0 🍇 (users) |
+| Skip active chat     | -0 🍇 (skippers)   |
+| Skip in queue        | -0 🍇 (users)      |
 
 ### Cooldown
 
@@ -293,27 +301,27 @@ This prevents spamming and encourages longer, more meaningful chats.
 
 ### Client
 
-| What | Where |
-|---|---|
-| Colors & fonts | `client/tailwind.config.js` → `theme.extend` |
-| Chat duration | `client/src/stores/cooldownStore.ts` |
-| Rules text | `client/src/components/IdleScreen.svelte` |
-| Firefly count | `client/src/routes/+page.svelte` |
+| What              | Where                                                |
+| ----------------- | ---------------------------------------------------- |
+| Colors & fonts    | `client/tailwind.config.js` → `theme.extend`         |
+| Chat duration     | `client/src/stores/cooldownStore.ts`                 |
+| Rules text        | `client/src/components/IdleScreen.svelte`            |
+| Firefly count     | `client/src/routes/+page.svelte`                     |
 | Socket server URL | `client/.env.development` / `client/.env.production` |
 
 ### Server
 
-| What | Where |
-|---|---|
-| Max berries | `server/src/constants.ts` → `MAX_BERRIES` |
-| Starting berries | `server/src/constants.ts` → `STARTING_BERRIES` |
-| Chat durations | `server/src/constants.ts` → `INITIAL_CHAT_MS` / `EXTENSION_CHAT_MS` |
-| Cooldown thresholds | `server/src/utils.ts` → `getCooldownMs()` |
-| Berry rewards | `server/src/constants.ts` → `REWARD_*` |
-| Matchmaking logic | `server/src/matchmaking.ts` |
-| Chat lifecycle | `server/src/chat.ts` |
-| Socket events | `server/src/events.ts` |
-| JWT secret | `server/.env.development` / `server/.env.production` |
+| What                | Where                                                               |
+| ------------------- | ------------------------------------------------------------------- |
+| Max berries         | `server/src/constants.ts` → `MAX_BERRIES`                           |
+| Starting berries    | `server/src/constants.ts` → `STARTING_BERRIES`                      |
+| Chat durations      | `server/src/constants.ts` → `INITIAL_CHAT_MS` / `EXTENSION_CHAT_MS` |
+| Cooldown thresholds | `server/src/utils.ts` → `getCooldownMs()`                           |
+| Berry rewards       | `server/src/constants.ts` → `REWARD_*`                              |
+| Matchmaking logic   | `server/src/matchmaking.ts`                                         |
+| Chat lifecycle      | `server/src/chat.ts`                                                |
+| Socket events       | `server/src/events.ts`                                              |
+| JWT secret          | `server/.env.development` / `server/.env.production`                |
 
 **Server is modularized** — See [server/README.md](./server/README.md) for detailed module breakdown and architecture.
 
@@ -340,6 +348,7 @@ CMD ["node", "server/dist/index.js"]
 ```
 
 **Build & run:**
+
 ```bash
 docker build -t sneakychat .
 docker run -p 3000:3000 \
@@ -359,6 +368,7 @@ docker run -p 3000:3000 \
 5. Deploy!
 
 For Heroku specifically:
+
 ```bash
 heroku config:set JWT_SECRET=your-strong-secret
 heroku config:set VITE_SOCKET_URL=https://your-app.herokuapp.com
@@ -368,6 +378,7 @@ git push heroku main
 ### Production Checklist
 
 Before deploying:
+
 - [ ] Set `JWT_SECRET` to strong random string (min 32 chars)
 - [ ] Update `VITE_SOCKET_URL` to your actual domain
 - [ ] Restrict CORS to your domain in `server/src/index.ts`
@@ -390,26 +401,31 @@ Before deploying:
 ### Common Tasks
 
 **Add a new socket event:**
+
 1. Define handler in `server/src/events.ts` → `registerEventHandlers()`
 2. Emit from client via `socket.emit()` in store/component
 3. Add any new constants to `server/src/constants.ts` if needed
 
 **Add a new game mechanic:**
+
 1. Add constant in `server/src/constants.ts`
 2. Implement logic in `server/src/matchmaking.ts` or `server/src/chat.ts`
 3. Call from event handler in `server/src/events.ts`
 
 **Fix a bug:**
+
 1. Identify which concern (matching, chat, tokens, etc.)
 2. Go to that module: `server/src/[module].ts`
 3. Fix and test
 
 **Add a new page:**
+
 1. Create `client/src/routes/[path]/+page.svelte`
 2. Optional: Create `+page.ts` for metadata / prerender
 3. Add to navigation in Header
 
 **Tweak game balance:**
+
 1. Edit constants in `server/src/constants.ts`
 2. Test with multiple clients
 3. See `server/README.md` for detailed architecture
@@ -420,31 +436,31 @@ Before deploying:
 
 ### Build & Deployment
 
-| Issue | Solution |
-|---|---|
+| Issue                                      | Solution                                                                      |
+| ------------------------------------------ | ----------------------------------------------------------------------------- |
 | "Address already in use" on :3000 or :5173 | Kill process: `lsof -i :3000 \| tail -1 \| awk '{print $2}' \| xargs kill -9` |
-| Client can't connect to server | Check server is running, check proxy in `client/vite.config.js`, check CORS |
-| TypeScript build errors | Run `npm run check`, fix files, rebuild |
-| npm workspaces not working | Ensure you're at root (sneakychat/), run `npm install --workspaces` |
+| Client can't connect to server             | Check server is running, check proxy in `client/vite.config.js`, check CORS   |
+| TypeScript build errors                    | Run `npm run check`, fix files, rebuild                                       |
+| npm workspaces not working                 | Ensure you're at root (sneakychat/), run `npm install --workspaces`           |
 
 ### Runtime Issues
 
-| Issue | Cause | Fix |
-|---|---|---|
-| "Already searching..." | User already in queue | Refresh or wait for timeout |
-| "Chat not found" | Server restarted | Chats are in-memory; rejoin not available |
-| Typing indicators lag | Network latency | Normal behavior |
-| CORS errors | Frontend/server URL mismatch | Update `VITE_SOCKET_URL` in `.env` |
-| Messages not syncing | JWT token issue | Refresh page or reconnect |
+| Issue                  | Cause                        | Fix                                       |
+| ---------------------- | ---------------------------- | ----------------------------------------- |
+| "Already searching..." | User already in queue        | Refresh or wait for timeout               |
+| "Chat not found"       | Server restarted             | Chats are in-memory; rejoin not available |
+| Typing indicators lag  | Network latency              | Normal behavior                           |
+| CORS errors            | Frontend/server URL mismatch | Update `VITE_SOCKET_URL` in `.env`        |
+| Messages not syncing   | JWT token issue              | Refresh page or reconnect                 |
 
 ### Development Issues
 
-| Issue | Solution |
-|---|---|
-| ".env not being read" | Check filename, directory (client/ or server/), restart dev server |
-| VS Code settings not working | Open at root folder (sneakychat/), not client/ or server/ |
-| Extensions not recommended | Open `.vscode/extensions.json`, install manually if needed |
-| Secrets leaked in git | Use `git-secret` or `git-crypt`, or rebase history with care |
+| Issue                        | Solution                                                           |
+| ---------------------------- | ------------------------------------------------------------------ |
+| ".env not being read"        | Check filename, directory (client/ or server/), restart dev server |
+| VS Code settings not working | Open at root folder (sneakychat/), not client/ or server/          |
+| Extensions not recommended   | Open `.vscode/extensions.json`, install manually if needed         |
+| Secrets leaked in git        | Use `git-secret` or `git-crypt`, or rebase history with care       |
 
 ---
 
@@ -478,6 +494,7 @@ MIT
 ## Support
 
 For issues or questions:
+
 1. Check **Quick Start** (above) for setup help
 2. Check **Configuration Files** for environment setup
 3. Check **Troubleshooting** for common issues

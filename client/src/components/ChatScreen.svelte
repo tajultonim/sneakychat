@@ -487,7 +487,7 @@
   </div>
 
   <!-- ── Game display ── -->
-  {#if ($activeGame && $gameSize == 'normal') || $gameSize == 'maximized'}
+  {#if $activeGame && ($gameSize == 'normal' || $gameSize == 'maximized')}
     <div
       class={`flex-1 overflow-y-auto px-3 py-3 bg-black/20 border-t border-white/[.06] ${($gameSize as any) == 'maximized' ? 'absolute bottom-16 w-full max-h-[100dvh] pt-28 overflow-scroll' : ''}`}
     >
