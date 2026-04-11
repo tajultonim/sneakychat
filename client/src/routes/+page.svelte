@@ -13,6 +13,7 @@
     type QueuedMessage,
   } from '$stores/chatStore';
   import { roomId } from '$stores/roomStore';
+  import { gameProposal, activeGame } from '$stores/gameStore';
   import { get } from 'svelte/store';
 
   import Fireflies from '$components/Fireflies.svelte';
@@ -178,6 +179,8 @@
       updateBerryUI(b);
       screen = 'chat';
       chatStore.start(durationMs);
+      activeGame.set(null);
+      gameProposal.set(null);
       roomId.set((d as { chatId: string }).chatId);
       chatStore.updateSession({
         chatId,
@@ -199,6 +202,7 @@
       };
 
       if (callback) callback('ok');
+
       if (type === 'system') {
         chatStore.addMessage(text, id, 'system', undefined, timestamp);
         return;
@@ -330,6 +334,92 @@
       if (screen === 'chat') chatStore.addMessage(msg);
       else toastStore.add(msg);
     });
+
+    // ── Game event listeners ──
+    sock.on('gameProposal', (d: unknown) => {
+      const proposal = d as {
+        gameId: string;
+        chatId: string;
+        proposedBy: string;
+        gameType: string;
+      };
+      gameProposal.set(proposal);
+      toastStore.add(`🎮 ${proposal.gameType}: Partner wants to play!`);
+    });
+
+    sock.on('gameStarted', (d: unknown) => {
+      const { gameId, chatId, gameType, initialState, players } = d as {
+        gameId: string;
+        chatId: string;
+        gameType: string;
+        initialState: unknown;
+        players: string[];
+      };
+
+      activeGame.set({
+        gameId,
+        chatId,
+        gameType,
+        players,
+        state: initialState,
+        isFinished: false,
+        winner: null,
+        currentPlayer: players[0],
+      });
+      gameProposal.set(null);
+      toastStore.add('🎮 Game started!');
+    });
+
+    sock.on('gameStateUpdate', (d: unknown) => {
+      const { gameId, gameType, state, currentPlayer } = d as {
+        gameId: string;
+        gameType: string;
+        state: unknown;
+        currentPlayer: string | null;
+      };
+      const current = get(activeGame);
+      if (current && current.gameId === gameId) {
+        activeGame.set({
+          ...current,
+          state,
+          currentPlayer,
+        });
+      }
+    });
+
+    sock.on('gameEnded', (d: unknown) => {
+      try {
+        const { gameId, state, winner, reward, message } = d as {
+          gameId: string;
+          state?: unknown;
+          winner: string | null;
+          reward: number;
+          message: string;
+        };
+        const current = get(activeGame);
+        if (current && current.gameId === gameId) {
+          activeGame.set({
+            ...current,
+            state: state ?? current.state,
+            isFinished: true,
+            winner,
+            currentPlayer: null,
+          });
+          toastStore.add(message);
+          if (winner) {
+            toastStore.add(`✨ +${reward} berries!`);
+          }
+
+          // Game remains open, waiting for user to restart or close
+        }
+      } catch (e) {
+        console.log(e);
+        let msg = (d as { msg: string }).msg;
+        toastStore.add(msg);
+        activeGame.set(null);
+      }
+    });
+
     return () => {
       socket.disconnect();
     };

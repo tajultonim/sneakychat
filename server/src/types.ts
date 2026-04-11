@@ -24,7 +24,10 @@ export class Timer {
   private timer: NodeJS.Timeout;
   public endAt: number;
 
-  constructor(private callback: () => void, public duration: number) {
+  constructor(
+    private callback: () => void,
+    public duration: number
+  ) {
     this.timer = setTimeout(callback, duration);
     this.endAt = Date.now() + duration;
   }
@@ -36,4 +39,26 @@ export class Timer {
   clear(): void {
     clearTimeout(this.timer);
   }
+}
+
+export type GameType = 'dotsAndBoxes' | 'tictactoe' | 'connect4' | 'rockPaperScissors';
+
+export interface GameMove {
+  playerId: string;
+  move: unknown;
+  timestamp: number;
+}
+
+export interface GameInstance {
+  gameId: string;
+  chatId: string;
+  gameType: GameType;
+  players: string[];
+  state: unknown;
+  status: 'pending' | 'playing' | 'finished';
+  winner: string | null;
+  moveHistory: GameMove[];
+  createdAt: number;
+  startedAt: number | null;
+  endedAt: number | null;
 }
