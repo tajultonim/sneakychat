@@ -92,6 +92,7 @@
 
   let typingTimer: ReturnType<typeof setTimeout> | null = null;
   let isTyping = false;
+  let disableEnterToSend = false;
   const TYPING_DELAY = 1000;
   const MAX_INPUT_LINES = 5;
   const LONG_PRESS_DELAY = 450;
@@ -99,6 +100,9 @@
 
   onMount(() => {
     gameSize.set('normal'); // Reset game size when component mounts
+    // Touch-first devices generally rely on a virtual keyboard.
+    disableEnterToSend =
+      window.matchMedia('(pointer: coarse)').matches && (navigator.maxTouchPoints ?? 0) > 0;
     resizeInput();
     return () => {
       if (typingTimer) clearTimeout(typingTimer);
@@ -338,7 +342,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !disableEnterToSend) {
       e.preventDefault();
       sendMsg();
     }
@@ -796,7 +800,7 @@
       </button>
 
       <textarea
-        class="flex-1 min-h-[37px] max-h-[140px] bg-white/[.07] border border-white/[.09] rounded-2xl px-4 py-[8px] text-cream font-nunito text-[.88rem] leading-5 outline-none placeholder-white/20 focus:border-[rgba(255,107,53,.45)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed resize-none overflow-y-auto"
+        class="flex-1 min-h-[37px] max-h-[140px] bg-white/[.07] border border-white/[.09] rounded-2xl px-4 py-[8px] text-cream font-nunito text-[.88rem] leading-5 outline-none placeholder-white/20 focus:border-[rgba(255,107,53,.45)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed resize-none overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         placeholder="Say something sneaky..."
         maxlength="500"
         autocomplete="off"
