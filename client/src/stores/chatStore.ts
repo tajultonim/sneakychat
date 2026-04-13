@@ -13,6 +13,7 @@ export interface ChatMessage {
   replyTo?: string;
   timestamp?: number;
   reaction?: string;
+  meta?: string;
   sticker?: {
     id: string;
     name: string;
@@ -120,11 +121,12 @@ export const chatStore = {
     type: MessageType = 'system',
     replyTo?: string,
     timestamp?: number,
-    reaction?: string
+    reaction?: string,
+    meta?: string
   ): void {
     if (!get(messages).find((m) => m.id === id)) {
       messages.update((ms) =>
-        [...ms, { id: id, text, type, replyTo, timestamp, reaction }].sort((a, b) =>
+        [...ms, { id: id, text, type, replyTo, timestamp, reaction, meta }].sort((a, b) =>
           a.timestamp! && b.timestamp! ? a.timestamp! - b.timestamp! : 0
         )
       );
@@ -173,6 +175,32 @@ export const chatStore = {
 
   removeQueuedMessage(id: string): void {
     queuedMessages.update((ms) => ms.filter((m) => m.id !== id));
+  },
+
+  getArchivedChatHistory(): Array<{
+    chatId: string;
+    startedAt: number;
+    lastTextAt: number;
+    messages: ChatMessage[];
+  }> {
+    const allSessions = loadMessagesFromLocalStorage();
+    return Object.values(allSessions)
+      .filter((sess) => sess && sess.chatId)
+      .sort((a, b) => (b.lastTextAt || b.startedAt || 0) - (a.lastTextAt || a.startedAt || 0));
+  },
+
+  deleteArchivedChat(chatId: string): void {
+    if (!browser || !chatId) return;
+    const allSessions = loadMessagesFromLocalStorage();
+    if (allSessions[chatId]) {
+      delete allSessions[chatId];
+      localStorage.setItem('archive-messages', JSON.stringify(allSessions));
+    }
+  },
+
+  clearArchivedChatHistory(): void {
+    if (!browser) return;
+    localStorage.removeItem('archive-messages');
   },
 
   showModal(): void {

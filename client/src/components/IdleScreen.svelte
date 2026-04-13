@@ -1,7 +1,7 @@
 <script lang="ts">
-  import { createEventDispatcher } from "svelte";
-  import { cooldownEnds } from "../stores/cooldownStore.ts";
-  import animatedFox from "../assets/icon/animated-fox.webp";
+  import { createEventDispatcher } from 'svelte';
+  import { cooldownEnds } from '../stores/cooldownStore.ts';
+  import animatedFox from '../assets/icon/animated-fox.webp';
 
   const dispatch = createEventDispatcher();
 
@@ -11,22 +11,14 @@
 <div class="p-5 flex flex-col gap-4">
   <!-- Hero row -->
   <div class="flex items-center gap-4">
-    <div
-      class="w-24 h-24 shrink-0 drop-shadow-[0_4px_16px_rgba(255,107,53,.35)]"
-    >
-      <img
-        src={animatedFox}
-        alt="Fox"
-        class="w-full h-full object-contain animate-bobble"
-      />
+    <div class="w-24 h-24 shrink-0 drop-shadow-[0_4px_16px_rgba(255,107,53,.35)]">
+      <img src={animatedFox} alt="Fox" class="w-full h-full object-contain animate-bobble" />
     </div>
     <div>
-      <h2 class="font-fredoka text-[1.45rem] text-cream leading-tight">
-        Ready to sneak around?
-      </h2>
+      <h2 class="font-fredoka text-[1.45rem] text-cream leading-tight">Ready to sneak around?</h2>
       <p class="text-leaf-lt text-[.83rem] mt-1 leading-relaxed">
-        Find a Sneaky Fox to chat with! Chats auto-end after 2 min — extend
-        together to keep going. Finish a chat to earn berries!
+        Find a Sneaky Fox to chat with! Chats auto-end after 2 min — extend together to keep going.
+        Finish a chat to earn berries!
       </p>
     </div>
   </div>
@@ -40,20 +32,26 @@
            active:scale-[.97]
            disabled:opacity-45 disabled:cursor-not-allowed"
     {disabled}
-    on:click={() => dispatch("findFox")}
+    on:click={() => dispatch('findFox')}
   >
     🔍 Find a Fox
   </button>
 
+  <button
+    class="w-full py-2.5 bg-white/[.05] border border-white/[.1] text-cream rounded-xl font-fredoka text-[.95rem]
+           transition-all duration-150 hover:bg-white/[.08] active:scale-[.98]"
+    on:click={() => dispatch('viewHistory')}
+  >
+    🗂️ View Chat History
+  </button>
+
   <!-- Rules -->
   <div class="bg-white/[.03] border border-white/[.06] rounded-xl p-3">
-    <div
-      class="font-fredoka text-[.9rem] text-berry-lt mb-2 flex items-center gap-1.5"
-    >
+    <div class="font-fredoka text-[.9rem] text-berry-lt mb-2 flex items-center gap-1.5">
       📜 Rules
     </div>
     <ul class="flex flex-col gap-1">
-      {#each ["Be respectful to other foxes.", "No harassment or offensive behavior.", "Do not share personal information.", "Each successful match costs both foxes 1 🍇 berry.", "Finishing a chat rewards berries — be a good fox!", "You will recieve 5 🍇 berries for completing or extending a chat.", "If your partner leaves, you'll be matched again automatically."] as rule}
+      {#each ['Be respectful to other foxes.', 'No harassment or offensive behavior.', 'Do not share personal information.', 'Each successful match costs both foxes 1 🍇 berry.', 'Finishing a chat rewards berries — be a good fox!', 'You will recieve 5 🍇 berries for completing or extending a chat.', "If your partner leaves, you'll be matched again automatically."] as rule}
         <li
           class="text-[.78rem] text-muted pl-4 relative leading-snug before:content-['🦊'] before:absolute before:left-0 before:text-[.65rem] before:top-0.5"
         >
