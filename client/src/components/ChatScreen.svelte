@@ -54,7 +54,7 @@
 
   let inputText = $state('');
   let messagesEl: HTMLDivElement;
-  let inputEl: HTMLInputElement;
+  let inputEl: HTMLTextAreaElement;
   let reactionPickerEl = $state<HTMLDivElement | null>(null);
   let sendButtonIconEl = $state<HTMLSpanElement | null>(null);
   let replyToId = $state<string | null>(null);
@@ -69,6 +69,7 @@
 
   function handleEmojiSelect(emoji: string) {
     inputText += emoji;
+    resizeInput();
     inputEl?.focus();
   }
 
@@ -1016,13 +1017,24 @@
   let typingTimer: ReturnType<typeof setTimeout> | null = null;
   let isTyping = false;
   const TYPING_DELAY = 1000;
+  const MAX_INPUT_LINES = 5;
 
   onMount(() => {
     gameSize.set('normal'); // Reset game size when component mounts
+    resizeInput();
     return () => {
       if (typingTimer) clearTimeout(typingTimer);
     };
   });
+
+  function resizeInput(): void {
+    if (!inputEl) return;
+    inputEl.style.height = 'auto';
+    const styles = window.getComputedStyle(inputEl);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || 20;
+    const maxHeight = lineHeight * MAX_INPUT_LINES;
+    inputEl.style.height = `${Math.min(inputEl.scrollHeight, maxHeight)}px`;
+  }
 
   $effect(() => {
     $messages.length;
@@ -1106,6 +1118,7 @@
       replyTo: replyToId,
     });
     inputText = '';
+    resizeInput();
     replyToId = null;
     inputEl.focus();
     flyPlane();
@@ -1513,9 +1526,9 @@
         </button>
       </div>
     {/if}
-    <div class="flex relative gap-2 px-2.5 py-2 shrink-0">
+    <div class="flex relative items-end gap-2 px-2.5 py-2 shrink-0">
       <button
-        class="game-menu-trigger w-[37px] h-[37px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
+        class="game-menu-trigger w-[37px] h-[37px] mb-[1px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
         disabled={$showTimerModal || $hasActiveGame}
         onclick={() => {
           gameMenuOpen = !gameMenuOpen;
@@ -1528,7 +1541,7 @@
       </button>
 
       <button
-        class="w-[37px] h-[37px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
+        class="w-[37px] h-[37px] mb-[1px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
         disabled={$showTimerModal || $berries < 2}
         onclick={() => {
           stickerPickerOpen = !stickerPickerOpen;
@@ -1541,7 +1554,7 @@
       </button>
 
       <button
-        class="w-[37px] h-[37px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
+        class="w-[37px] h-[37px] mb-[1px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
         disabled={$showTimerModal}
         onclick={() => {
           emojiPickerOpen = !emojiPickerOpen;
@@ -1553,17 +1566,18 @@
         😊
       </button>
 
-      <input
-        class="flex-1 bg-white/[.07] border border-white/[.09] rounded-full px-4 py-[9px] text-cream font-nunito text-[.88rem] outline-none placeholder-white/20 focus:border-[rgba(255,107,53,.45)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        type="text"
+      <textarea
+        class="flex-1 min-h-[37px] max-h-[140px] bg-white/[.07] border border-white/[.09] rounded-2xl px-4 py-[8px] text-cream font-nunito text-[.88rem] leading-5 outline-none placeholder-white/20 focus:border-[rgba(255,107,53,.45)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed resize-none overflow-y-auto"
         placeholder="Say something sneaky..."
         maxlength="500"
         autocomplete="off"
+        rows="1"
         bind:value={inputText}
         disabled={$showTimerModal}
         onkeydown={handleKeydown}
         bind:this={inputEl}
         oninput={() => {
+          resizeInput();
           if (isTyping) {
             clearTimeout(typingTimer);
           } else {
@@ -1576,9 +1590,9 @@
             isTyping = false;
           }, TYPING_DELAY);
         }}
-      />
+      ></textarea>
       <button
-        class="w-[37px] text-white disabled:pointer-events-none overflow-hidden select-none pl-1 pb-1 h-[37px] shrink-0 bg-fox rounded-full border-0 cursor-pointer text-[.95rem] flex items-center justify-center transition-all hover:bg-fox-dark hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed"
+        class="w-[37px] h-[37px] mb-[1px] text-white disabled:pointer-events-none overflow-hidden select-none pl-1 pb-1 shrink-0 bg-fox rounded-full border-0 cursor-pointer text-[.95rem] flex items-center justify-center transition-all hover:bg-fox-dark hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed"
         disabled={$showTimerModal || !inputText.trim()}
         onclick={sendMsg}
       >
