@@ -27,7 +27,7 @@
   import GameMenu from './GameMenu.svelte';
   import StickerPicker from './StickerPicker.svelte';
   import EmojiPicker from './EmojiPicker.svelte';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
 
   type OutgoingMessage = {
     text?: string;
@@ -173,7 +173,7 @@
     return hex.slice(0, length);
   }
 
-  function sendMsg(): void {
+  async function sendMsg(): Promise<void> {
     const text = inputText.trim();
     if (!text || $showTimerModal) return;
 
@@ -183,6 +183,7 @@
       replyTo: replyToId,
     });
     inputText = '';
+    await tick();
     resizeInput();
     replyToId = null;
     inputEl.focus();
