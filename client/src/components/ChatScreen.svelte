@@ -27,7 +27,7 @@
   import GameMenu from './GameMenu.svelte';
   import StickerPicker from './StickerPicker.svelte';
   import EmojiPicker from './EmojiPicker.svelte';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
 
   type OutgoingMessage = {
     text?: string;
@@ -54,7 +54,8 @@
 
   let inputText = $state('');
   let messagesEl: HTMLDivElement;
-  let inputEl: HTMLInputElement;
+  let inputEl: HTMLTextAreaElement;
+  let wrapperEl: HTMLDivElement;
   let reactionPickerEl = $state<HTMLDivElement | null>(null);
   let sendButtonIconEl = $state<HTMLSpanElement | null>(null);
   let replyToId = $state<string | null>(null);
@@ -66,946 +67,22 @@
   let gameMenuOpen = $state(false);
   let stickerPickerOpen = $state(false);
   let emojiPickerOpen = $state(false);
+  let longPressMenu = $state<{
+    messageId: string;
+    text: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let longPressStartX = 0;
+  let longPressStartY = 0;
+  let suppressNextBubbleTap = false;
 
   function handleEmojiSelect(emoji: string) {
     inputText += emoji;
+    resizeInput();
     inputEl?.focus();
   }
-
-  // ── Emoji categories moved to EmojiPicker component ──
-
-  /*
-  const emojiCategories = {
-    recent: {
-      icon: '🕐',
-      name: 'Recent',
-      emojis: [],
-    },
-    smileys: {
-      icon: '😊',
-      name: 'Smileys',
-      emojis: [
-        '😀',
-        '😃',
-        '😄',
-        '😁',
-        '😆',
-        '😅',
-        '🤣',
-        '😂',
-        '🙂',
-        '🙃',
-        '😉',
-        '😊',
-        '😇',
-        '🥰',
-        '😍',
-        '🤩',
-        '😘',
-        '😗',
-        '😚',
-        '😙',
-        '🥲',
-        '😋',
-        '😛',
-        '😜',
-        '🤪',
-        '😌',
-        '😔',
-        '😑',
-        '😐',
-        '😶',
-        '🤐',
-        '🤨',
-        '🤔',
-        '🤫',
-        '🤭',
-        '🤥',
-        '😌',
-        '😒',
-        '🙁',
-        '☹️',
-        '😲',
-        '😞',
-        '😖',
-        '😢',
-        '😭',
-        '😤',
-        '😠',
-        '😡',
-        '🤬',
-        '😈',
-        '👿',
-        '💀',
-        '😱',
-        '👻',
-        '😨',
-        '😰',
-        '😥',
-        '😓',
-        '🤗',
-        '🤡',
-        '😂',
-        '🤣',
-        '😈',
-        '😜',
-      ],
-    },
-    animals: {
-      icon: '🐶',
-      name: 'Animals',
-      emojis: [
-        '🐶',
-        '🐱',
-        '🐭',
-        '🐹',
-        '🐰',
-        '🦊',
-        '🐻',
-        '🐼',
-        '🐨',
-        '🐯',
-        '🦁',
-        '🐮',
-        '🐷',
-        '🐽',
-        '🐸',
-        '🐵',
-        '🙈',
-        '🙉',
-        '🙊',
-        '🐒',
-        '🐔',
-        '🐧',
-        '🐦',
-        '🐤',
-        '🐣',
-        '🐥',
-        '🦆',
-        '🦅',
-        '🦉',
-        '🦇',
-        '🐺',
-        '🐗',
-        '🐴',
-        '🦄',
-        '🐝',
-        '🐛',
-        '🦋',
-        '🐌',
-        '🐞',
-        '🐜',
-        '🦟',
-        '🦗',
-        '🕷️',
-        '🦂',
-        '🐢',
-        '🐍',
-        '🦎',
-        '🦖',
-        '🦕',
-        '🐙',
-        '🦑',
-        '🦐',
-        '🦞',
-        '🦀',
-        '🐡',
-        '🐠',
-        '🐟',
-        '🐬',
-        '🐳',
-        '🐋',
-        '🦈',
-        '🐊',
-        '🐅',
-        '🐆',
-        '🦓',
-        '🦍',
-        '🦧',
-        '🐘',
-        '🦛',
-        '🦏',
-        '🐪',
-        '🐫',
-        '🦒',
-        '🦘',
-        '🐃',
-        '🐂',
-        '🐄',
-        '🐎',
-        '🐖',
-        '🐏',
-        '🐑',
-        '🦉',
-        '🐐',
-        '🦌',
-        '🐕',
-        '🐩',
-        '🦮',
-        '🐈',
-        '🐓',
-        '🦃',
-        '🦚',
-        '🦜',
-        '🦢',
-        '🦗',
-        '🥚',
-        '🍗',
-        '🍖',
-        '🌭',
-        '🍔',
-        '🍟',
-        '🍕',
-      ],
-    },
-    food: {
-      icon: '🍎',
-      name: 'Food',
-      emojis: [
-        '🍏',
-        '🍎',
-        '🍐',
-        '🍊',
-        '🍋',
-        '🍌',
-        '🍉',
-        '🍇',
-        '🍓',
-        '🍈',
-        '🍒',
-        '🍑',
-        '🥭',
-        '🍍',
-        '🥥',
-        '🥝',
-        '🍅',
-        '🍆',
-        '🥑',
-        '🥦',
-        '🥬',
-        '🥒',
-        '🌶️',
-        '🌽',
-        '🥕',
-        '🧄',
-        '🧅',
-        '🥔',
-        '🍠',
-        '🥐',
-        '🍞',
-        '🥖',
-        '🥨',
-        '🧀',
-        '🥚',
-        '🍳',
-        '🧈',
-        '🥞',
-        '🥓',
-        '🥩',
-        '🍗',
-        '🍖',
-        '🌭',
-        '🍔',
-        '🍟',
-        '🍕',
-        '🥪',
-        '🥙',
-        '🧆',
-        '🌮',
-        '🌯',
-        '🥗',
-        '🥘',
-        '🥫',
-        '🍝',
-        '🍜',
-        '🍲',
-        '🍛',
-        '🍣',
-        '🍱',
-        '🥟',
-        '🦪',
-        '🍤',
-        '🍙',
-        '🍚',
-        '🍘',
-        '🍥',
-        '🥠',
-        '🥮',
-        '🍢',
-        '🍡',
-        '🍧',
-        '🍨',
-        '🍦',
-        '🍰',
-        '🎂',
-        '🧁',
-        '🍮',
-        '🍭',
-        '🍬',
-        '🍫',
-        '🍿',
-        '🍩',
-        '🍪',
-        '🌰',
-        '🥜',
-        '🍯',
-        '🥛',
-        '🍼',
-        '☕',
-        '🍵',
-        '🍶',
-        '🍾',
-        '🍷',
-        '🍸',
-        '🍹',
-        '🍺',
-        '🍻',
-        '🥂',
-        '🥃',
-      ],
-    },
-    travel: {
-      icon: '✈️',
-      name: 'Travel',
-      emojis: [
-        '🚗',
-        '🚕',
-        '🚙',
-        '🚌',
-        '🚎',
-        '🏎️',
-        '🚓',
-        '🚑',
-        '🚒',
-        '🚐',
-        '🛻',
-        '🚚',
-        '🚛',
-        '🚜',
-        '🏍️',
-        '🏎️',
-        '🛵',
-        '🦯',
-        '🦽',
-        '🦼',
-        '🛺',
-        '🚲',
-        '🛴',
-        '🚨',
-        '🚝',
-        '🚞',
-        '🚋',
-        '🚞',
-        '🚝',
-        '🚄',
-        '🚅',
-        '🚈',
-        '🚂',
-        '🚆',
-        '🚇',
-        '🚊',
-        '🚉',
-        '✈️',
-        '🛫',
-        '🛬',
-        '🛩️',
-        '💺',
-        '🛰️',
-        '🚁',
-        '🛶',
-        '⛵',
-        '🚤',
-        '🛳️',
-        '⛴️',
-        '🛥️',
-        '🚢',
-        '🚧',
-      ],
-    },
-    activities: {
-      icon: '⚽',
-      name: 'Activities',
-      emojis: [
-        '⚽',
-        '⚾',
-        '🥎',
-        '🎾',
-        '🏐',
-        '🏈',
-        '🏉',
-        '🥏',
-        '🎳',
-        '🏓',
-        '🏸',
-        '🏒',
-        '🏑',
-        '🥍',
-        '🏏',
-        '🥅',
-        '⛳',
-        '⛸️',
-        '🎣',
-        '🎽',
-        '🎿',
-        '⛷️',
-        '🏂',
-        '🪂',
-        '🥊',
-        '🥋',
-        '🎽',
-        '🎖️',
-        '🏅',
-        '🏆',
-        '🎪',
-        '🤹',
-        '🎨',
-        '🎬',
-        '🎤',
-        '🎧',
-        '🎼',
-        '🎹',
-        '🥁',
-        '🎷',
-        '🎺',
-        '🎸',
-        '🥁',
-        '🎻',
-        '🎲',
-        '♟️',
-        '🎯',
-        '🎳',
-        '🎮',
-        '🎰',
-        '🚗',
-      ],
-    },
-    objects: {
-      icon: '💝',
-      name: 'Objects',
-      emojis: [
-        '⌚',
-        '📱',
-        '📲',
-        '💻',
-        '⌨️',
-        '🖥️',
-        '🖨️',
-        '🖱️',
-        '🖲️',
-        '🕹️',
-        '🗜️',
-        '💽',
-        '💾',
-        '💿',
-        '📀',
-        '🧮',
-        '🎥',
-        '🎬',
-        '📺',
-        '📷',
-        '📸',
-        '📹',
-        '🎞️',
-        '📽️',
-        '🎦',
-        '📞',
-        '☎️',
-        '📟',
-        '📠',
-        '📺',
-        '📻',
-        '🎙️',
-        '🎚️',
-        '🎛️',
-        '🧭',
-        '⏱️',
-        '⏲️',
-        '⏰',
-        '🕰️',
-        '⌛',
-        '⏳',
-        '📡',
-        '🔋',
-        '🔌',
-        '💡',
-        '🔦',
-        '🕯️',
-        '🪔',
-        '🧯',
-        '🛢️',
-        '💸',
-        '💵',
-        '💴',
-        '💶',
-        '💷',
-        '💰',
-        '💳',
-        '🧾',
-        '✉️',
-        '📩',
-        '📨',
-        '📤',
-        '📥',
-        '📦',
-        '🏷️',
-        '📪',
-        '📫',
-        '📬',
-        '📭',
-        '📮',
-        '✏️',
-        '✒️',
-        '🖋️',
-        '🖊️',
-        '🖌️',
-        '🖍️',
-        '📝',
-        '📁',
-        '📂',
-        '📅',
-        '📆',
-        '🗒️',
-        '🗓️',
-        '📇',
-        '📈',
-        '📉',
-        '📊',
-        '📋',
-        '📌',
-        '📍',
-        '📎',
-        '🖇️',
-        '📐',
-        '📏',
-        '🧮',
-        '📐',
-        '🔒',
-        '🔓',
-        '🔏',
-        '🔐',
-        '🔑',
-        '🗝️',
-        '🔨',
-        '🪓',
-        '⛏️',
-        '⚒️',
-        '🛠️',
-        '🗡️',
-        '⚔️',
-        '🔫',
-        '🪃',
-        '🧤',
-        '🧨',
-        '💼',
-        '📦',
-      ],
-    },
-    symbols: {
-      icon: '❤️',
-      name: 'Symbols',
-      emojis: [
-        '❤️',
-        '🧡',
-        '💛',
-        '💚',
-        '💙',
-        '💜',
-        '🖤',
-        '🤍',
-        '🤎',
-        '💔',
-        '❣️',
-        '💕',
-        '💞',
-        '💓',
-        '💗',
-        '💖',
-        '💘',
-        '💝',
-        '💟',
-        '👋',
-        '🤚',
-        '🖐️',
-        '✋',
-        '🖖',
-        '👌',
-        '🤌',
-        '🤏',
-        '✌️',
-        '🤞',
-        '🫰',
-        '🤟',
-        '🤘',
-        '🤙',
-        '👍',
-        '👎',
-        '✊',
-        '👊',
-        '🤛',
-        '🤜',
-        '👏',
-        '🙌',
-        '👐',
-        '🤲',
-        '🤝',
-        '🤜',
-        '💅',
-        '🦶',
-        '🦵',
-        '💪',
-        '🦾',
-        '🦿',
-        '🦴',
-        '👀',
-        '👁️',
-        '👅',
-        '👂',
-        '🦻',
-        '🧠',
-        '🦷',
-        '🦴',
-        '🦴',
-        '🌟',
-        '⭐',
-        '✨',
-        '⚡',
-        '🔥',
-        '💥',
-        '💫',
-        '🌈',
-        '☀️',
-        '🌤️',
-        '⛅',
-        '🌥️',
-        '☁️',
-        '🌦️',
-        '🌧️',
-        '⛈️',
-        '💨',
-        '💧',
-        '💦',
-        '⚽',
-        '🔮',
-        '🎯',
-        '🎪',
-        '🎨',
-        '🎭',
-        '🎬',
-        '🎤',
-        '🎧',
-        '🎮',
-        '🎲',
-        '🎳',
-        '♠️',
-        '♥️',
-        '♦️',
-        '♣️',
-        '♟️',
-        '🃏',
-        '🀄',
-        '🎭',
-        '🎪',
-      ],
-    },
-    flags: {
-      icon: '🏴',
-      name: 'Flags',
-      emojis: [
-        '🏁',
-        '🏴',
-        '🏳️',
-        '🏳️‍🌈',
-        '🏳️‍⚧️',
-        '🏴‍☠️',
-        '🇦🇨',
-        '🇦🇩',
-        '🇦🇪',
-        '🇦🇫',
-        '🇦🇬',
-        '🇦🇮',
-        '🇦🇱',
-        '🇦🇲',
-        '🇦🇴',
-        '🇦🇶',
-        '🇦🇷',
-        '🇦🇸',
-        '🇦🇹',
-        '🇦🇺',
-        '🇦🇼',
-        '🇦🇽',
-        '🇦🇿',
-        '🇧🇦',
-        '🇧🇧',
-        '🇧🇩',
-        '🇧🇪',
-        '🇧🇫',
-        '🇧🇬',
-        '🇧🇭',
-        '🇧🇮',
-        '🇧🇯',
-        '🇧🇱',
-        '🇧🇲',
-        '🇧🇳',
-        '🇧🇴',
-        '🇧🇶',
-        '🇧🇷',
-        '🇧🇸',
-        '🇧🇹',
-        '🇧🇻',
-        '🇧🇼',
-        '🇧🇾',
-        '🇧🇿',
-        '🇨🇦',
-        '🇨🇨',
-        '🇨🇩',
-        '🇨🇫',
-        '🇨🇬',
-        '🇨🇭',
-        '🇨🇮',
-        '🇨🇰',
-        '🇨🇱',
-        '🇨🇲',
-        '🇨🇳',
-        '🇨🇴',
-        '🇨🇷',
-        '🇨🇺',
-        '🇨🇻',
-        '🇨🇼',
-        '🇨🇽',
-        '🇨🇾',
-        '🇨🇿',
-        '🇩🇪',
-        '🇩🇯',
-        '🇩🇰',
-        '🇩🇲',
-        '🇩🇴',
-        '🇩🇿',
-        '🇪🇨',
-        '🇪🇪',
-        '🇪🇬',
-        '🇪🇭',
-        '🇪🇷',
-        '🇪🇸',
-        '🇪🇹',
-        '🇪🇺',
-        '🇫🇮',
-        '🇫🇯',
-        '🇫🇰',
-        '🇫🇲',
-        '🇫🇴',
-        '🇫🇷',
-        '🇬🇦',
-        '🇬🇧',
-        '🇬🇩',
-        '🇬🇪',
-        '🇬🇫',
-      ],
-    },
-    nature: {
-      icon: '🌱',
-      name: 'Nature',
-      emojis: [
-        '🌾',
-        '💐',
-        '🌷',
-        '🌹',
-        '🥀',
-        '🌺',
-        '🌻',
-        '🌞',
-        '🌝',
-        '🌛',
-        '🌜',
-        '🌚',
-        '🌕',
-        '🌖',
-        '🌗',
-        '🌘',
-        '🌑',
-        '🌒',
-        '🌓',
-        '🌔',
-        '🌚',
-        '🌝',
-        '🌟',
-        '✨',
-        '⭐',
-        '🌠',
-        '☄️',
-        '💥',
-        '🔥',
-        '🌪️',
-        '🌈',
-        '☀️',
-        '🌤️',
-        '⛅',
-        '🌥️',
-        '☁️',
-        '🌦️',
-        '🌧️',
-        '⛈️',
-        '🌩️',
-        '🌨️',
-        '❄️',
-        '☃️',
-        '⛄',
-        '🌬️',
-        '💨',
-        '💧',
-        '💦',
-        '☔',
-        '🍏',
-        '🍎',
-        '🍐',
-        '🍊',
-        '🍋',
-        '🍌',
-        '🍉',
-        '🍇',
-        '🍓',
-        '🍈',
-        '🍒',
-        '🍑',
-        '🥭',
-        '🍍',
-        '🥥',
-        '🥝',
-        '🍅',
-        '🍆',
-        '🥑',
-        '🥦',
-        '🥬',
-        '🥒',
-        '🌶️',
-        '🌽',
-        '🥕',
-        '🧄',
-        '🧅',
-        '🥔',
-        '🍠',
-        '🥐',
-        '🍞',
-        '🥖',
-        '🥨',
-        '🧀',
-        '🥚',
-        '🍳',
-        '🧈',
-        '🥞',
-        '🥓',
-        '🥩',
-        '🍗',
-        '🍖',
-        '🌭',
-        '🍔',
-        '🍟',
-        '🍕',
-      ],
-    },
-    people: {
-      icon: '👶',
-      name: 'People',
-      emojis: [
-        '👶',
-        '👧',
-        '🧒',
-        '👦',
-        '👨',
-        '👩',
-        '👴',
-        '👵',
-        '👨‍🦳',
-        '👩‍🦳',
-        '👨‍🦱',
-        '👩‍🦱',
-        '👨‍🦲',
-        '👩‍🦲',
-        '👨‍🦳',
-        '👩‍🦳',
-        '🧔',
-        '👨‍🦔',
-        '👩‍🦔',
-        '👨‍🎀',
-        '👩‍🎀',
-        '👨‍🎨',
-        '👩‍🎨',
-        '👨‍🏫',
-        '👩‍🏫',
-        '👨‍🏫',
-        '👩‍🏫',
-        '👨‍🎓',
-        '👩‍🎓',
-        '👨‍💼',
-        '👩‍💼',
-        '👨‍💻',
-        '👩‍💻',
-        '👨‍🎤',
-        '👩‍🎤',
-        '👨‍🎧',
-        '👩‍🎧',
-        '👨‍⚕️',
-        '👩‍⚕️',
-        '👨‍🍳',
-        '👩‍🍳',
-        '👨‍🌾',
-        '👩‍🌾',
-        '👨‍⛓️',
-        '👩‍⛓️',
-        '👨‍🏭',
-        '👩‍🏭',
-        '👨‍🏗️',
-        '👩‍🏗️',
-        '👨‍🔧',
-        '👩‍🔧',
-        '👨‍🔬',
-        '👩‍🔬',
-        '👨‍🎨',
-        '👩‍🎨',
-        '👨‍🚒',
-        '👩‍🚒',
-        '👨‍✈️',
-        '👩‍✈️',
-        '👨‍🚀',
-        '👩‍🚀',
-        '👨‍⚖️',
-        '👩‍⚖️',
-        '👰',
-        '🤵',
-        '👸',
-        '🤴',
-        '🥷',
-        '🦸',
-        '🦹',
-        '🤺',
-        '⛹️',
-        '🤼',
-        '🤸',
-        '⛹️‍♀️',
-        '🤾',
-        '🏌️',
-        '🏇',
-        '🧘',
-        '🏄',
-        '🏊',
-        '🤽',
-        '🚣',
-        '🧗',
-        '🚴',
-        '🚵',
-        '🤹',
-        '🎣',
-        '🎽',
-        '🎿',
-        '⛷️',
-        '🏂',
-        '🛷',
-        '🛹',
-        '🛼',
-        '🛶',
-      ],
-    },
-  };
-  */
 
   // Titlebar notification
   let originalTitle = typeof document !== 'undefined' ? document.title : '';
@@ -1015,14 +92,31 @@
 
   let typingTimer: ReturnType<typeof setTimeout> | null = null;
   let isTyping = false;
+  let disableEnterToSend = false;
   const TYPING_DELAY = 1000;
+  const MAX_INPUT_LINES = 5;
+  const LONG_PRESS_DELAY = 450;
+  const LONG_PRESS_MOVE_TOLERANCE = 10;
 
   onMount(() => {
     gameSize.set('normal'); // Reset game size when component mounts
+    // Touch-first devices generally rely on a virtual keyboard.
+    disableEnterToSend =
+      window.matchMedia('(pointer: coarse)').matches && (navigator.maxTouchPoints ?? 0) > 0;
+    resizeInput();
     return () => {
       if (typingTimer) clearTimeout(typingTimer);
     };
   });
+
+  function resizeInput(): void {
+    if (!inputEl) return;
+    inputEl.style.height = 'auto';
+    const styles = window.getComputedStyle(inputEl);
+    const lineHeight = Number.parseFloat(styles.lineHeight) || 20;
+    const maxHeight = lineHeight * MAX_INPUT_LINES;
+    inputEl.style.height = `${Math.min(inputEl.scrollHeight, maxHeight)}px`;
+  }
 
   $effect(() => {
     $messages.length;
@@ -1041,6 +135,108 @@
     });
   }
 
+  function clearLongPressTimer(): void {
+    if (!longPressTimer) return;
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+
+  function closeLongPressMenu(): void {
+    longPressMenu = null;
+  }
+
+  function startLongPress(
+    event: TouchEvent,
+    messageId: string,
+    text: string,
+    canOpenMenu: boolean
+  ): void {
+    if (!canOpenMenu || $showTimerModal || event.touches.length !== 1) return;
+
+    const touch = event.touches[0];
+    longPressStartX = touch.clientX;
+    longPressStartY = touch.clientY;
+    clearLongPressTimer();
+    console.log(event);
+    longPressTimer = setTimeout(() => {
+      suppressNextBubbleTap = true;
+      openMessageActionMenu(messageId, text, touch.clientX, touch.clientY - 16);
+    }, LONG_PRESS_DELAY);
+  }
+
+  function openMessageActionMenu(messageId: string, text: string, x: number, y: number): void {
+    reactionPickerMessageId = null;
+    const menuWidth = 172;
+    const menuHeight = 112;
+    const menuX = Math.max(12, Math.min(x, wrapperEl.clientWidth - menuWidth - 12));
+    const menuY = Math.max(12, Math.min(y, wrapperEl.clientHeight - menuHeight - 12));
+    longPressMenu = { messageId, text, x: menuX, y: menuY };
+  }
+
+  function handleLongPressMove(event: TouchEvent): void {
+    if (!longPressTimer || event.touches.length !== 1) return;
+
+    const touch = event.touches[0];
+    const deltaX = Math.abs(touch.clientX - longPressStartX);
+    const deltaY = Math.abs(touch.clientY - longPressStartY);
+    if (deltaX > LONG_PRESS_MOVE_TOLERANCE || deltaY > LONG_PRESS_MOVE_TOLERANCE) {
+      clearLongPressTimer();
+    }
+  }
+
+  function endLongPress(): void {
+    clearLongPressTimer();
+  }
+
+  function handleMessageContextMenu(
+    event: MouseEvent,
+    messageId: string,
+    text: string,
+    canOpenMenu: boolean
+  ): void {
+    if (!canOpenMenu || $showTimerModal) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    suppressNextBubbleTap = true;
+    console.log(event);
+    openMessageActionMenu(messageId, text, event.clientX, event.clientY);
+  }
+
+  function handleMessageBubbleClick(): void {
+    if (suppressNextBubbleTap) {
+      suppressNextBubbleTap = false;
+      return;
+    }
+    inputEl.focus();
+  }
+
+  async function copyTextToClipboard(text: string): Promise<void> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const fallback = document.createElement('textarea');
+        fallback.value = text;
+        fallback.setAttribute('readonly', '');
+        fallback.style.position = 'fixed';
+        fallback.style.opacity = '0';
+        document.body.appendChild(fallback);
+        fallback.select();
+        document.execCommand('copy');
+        document.body.removeChild(fallback);
+      }
+    } finally {
+      closeLongPressMenu();
+    }
+  }
+
+  function replyFromLongPress(messageId: string): void {
+    replyToId = messageId;
+    closeLongPressMenu();
+    inputEl.focus();
+  }
+
   function flyPlane() {
     if (sendButtonIconEl?.classList.contains('animate-fly')) return; // prevent spamming
     void sendButtonIconEl?.offsetWidth; // restart animation trick
@@ -1051,7 +247,12 @@
   }
 
   window.addEventListener('click', (e: MouseEvent) => {
+    if (e.button !== 0) return;
     const target = e.target as HTMLElement;
+
+    if (longPressMenu && !target?.closest('[data-longpress-menu="true"]')) {
+      closeLongPressMenu();
+    }
 
     // Close emoji reaction picker
     if (reactionPickerMessageId) {
@@ -1096,7 +297,7 @@
     return hex.slice(0, length);
   }
 
-  function sendMsg(): void {
+  async function sendMsg(): Promise<void> {
     const text = inputText.trim();
     if (!text || $showTimerModal) return;
 
@@ -1106,6 +307,8 @@
       replyTo: replyToId,
     });
     inputText = '';
+    await tick();
+    resizeInput();
     replyToId = null;
     inputEl.focus();
     flyPlane();
@@ -1139,7 +342,7 @@
   }
 
   function handleKeydown(e: KeyboardEvent): void {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !disableEnterToSend) {
       e.preventDefault();
       sendMsg();
     }
@@ -1261,6 +464,7 @@
 
   $effect(() => {
     return () => {
+      clearLongPressTimer();
       clearModalTimer();
       stopTitleFlash();
     };
@@ -1268,7 +472,7 @@
 </script>
 
 <!-- Outer wrapper fills the card height -->
-<div class="flex flex-col h-[100dvh] sm:h-[calc(100dvh-1.5rem)] relative">
+<div bind:this={wrapperEl} class="flex flex-col h-[100dvh] sm:h-[calc(100dvh-1.5rem)] relative">
   <!-- ── Chat header ── -->
   <div
     class="flex items-center gap-2.5 px-3 py-2 bg-[rgba(255,107,53,.07)] border-b border-white/[.06] shrink-0"
@@ -1323,7 +527,12 @@
   </div>
 
   <!-- ── Messages ── -->
-  <div class="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-[5px]" bind:this={messagesEl}>
+  <div
+    class="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-[5px]"
+    role="log"
+    aria-label="Chat messages"
+    bind:this={messagesEl}
+  >
     {#each $messages as msg, i (msg.id)}
       {#if msg.type === 'system'}
         <div
@@ -1334,10 +543,19 @@
       {:else}
         <div
           id={`msg-${msg.id}`}
+          data-message-id={msg.id}
+          data-can-menu={!msg.sticker && msg.type !== 'reaction'}
+          data-message-text={msg.text}
           role="button"
-          onclick={() => {
-            inputEl.focus();
+          onclick={handleMessageBubbleClick}
+          oncontextmenu={(e) => {
+            handleMessageContextMenu(e, msg.id, msg.text, !msg.sticker && msg.type !== 'reaction');
           }}
+          ontouchstart={(e) =>
+            startLongPress(e, msg.id, msg.text, !msg.sticker && msg.type !== 'reaction')}
+          ontouchmove={handleLongPressMove}
+          ontouchend={endLongPress}
+          ontouchcancel={endLongPress}
           tabindex="0"
           onkeydown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -1407,7 +625,9 @@
               }}
             />
           {:else}
-            <span class={`${isEmoji(msg.text) ? 'text-7xl' : ''}  select-text`}>{msg.text}</span>
+            <span class={`${isEmoji(msg.text) ? 'text-7xl' : 'whitespace-pre-wrap'}`}
+              >{msg.text}</span
+            >
           {/if}
           <span
             class={`absolute -my-1 w-full pt-3 flex items-center gap-2 ${msg.type == 'self' ? 'right-0 flex-row-reverse' : 'left-0'} text-xs whitespace-nowrap text-muted`}
@@ -1484,6 +704,32 @@
     {/each}
   </div>
 
+  {#if longPressMenu}
+    <button
+      class="fixed inset-0 z-40 bg-transparent border-0 cursor-default"
+      aria-label="Close message actions"
+      onclick={closeLongPressMenu}
+    ></button>
+    <div
+      data-longpress-menu="true"
+      class="fixed z-50 min-w-[160px] overflow-hidden rounded-xl border border-white/[.14] bg-[rgba(14,28,14,.96)] shadow-[0_14px_34px_rgba(0,0,0,.45)]"
+      style={`left:${longPressMenu.x}px; top:${longPressMenu.y}px;`}
+    >
+      <button
+        class="w-full text-left px-3.5 py-2.5 text-[.86rem] text-cream font-nunito hover:bg-white/[.08] transition-colors border-0 bg-transparent cursor-pointer"
+        onclick={() => copyTextToClipboard(longPressMenu.text)}
+      >
+        Copy
+      </button>
+      <button
+        class="w-full text-left px-3.5 py-2.5 text-[.86rem] text-cream font-nunito hover:bg-white/[.08] transition-colors border-0 bg-transparent cursor-pointer"
+        onclick={() => replyFromLongPress(longPressMenu.messageId)}
+      >
+        Reply
+      </button>
+    </div>
+  {/if}
+
   <!-- ── Game display ── -->
   {#if $activeGame && ($gameSize == 'normal' || $gameSize == 'maximized')}
     <div
@@ -1513,9 +759,9 @@
         </button>
       </div>
     {/if}
-    <div class="flex relative gap-2 px-2.5 py-2 shrink-0">
+    <div class="flex relative items-end gap-2 px-2.5 py-2 shrink-0">
       <button
-        class="game-menu-trigger w-[37px] h-[37px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
+        class="game-menu-trigger w-[37px] h-[37px] mb-[1px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
         disabled={$showTimerModal || $hasActiveGame}
         onclick={() => {
           gameMenuOpen = !gameMenuOpen;
@@ -1528,7 +774,7 @@
       </button>
 
       <button
-        class="w-[37px] h-[37px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
+        class="w-[37px] h-[37px] mb-[1px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
         disabled={$showTimerModal || $berries < 2}
         onclick={() => {
           stickerPickerOpen = !stickerPickerOpen;
@@ -1541,7 +787,7 @@
       </button>
 
       <button
-        class="w-[37px] h-[37px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
+        class="w-[37px] h-[37px] mb-[1px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
         disabled={$showTimerModal}
         onclick={() => {
           emojiPickerOpen = !emojiPickerOpen;
@@ -1553,17 +799,18 @@
         😊
       </button>
 
-      <input
-        class="flex-1 bg-white/[.07] border border-white/[.09] rounded-full px-4 py-[9px] text-cream font-nunito text-[.88rem] outline-none placeholder-white/20 focus:border-[rgba(255,107,53,.45)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-        type="text"
+      <textarea
+        class="flex-1 min-h-[37px] max-h-[140px] bg-white/[.07] border border-white/[.09] rounded-2xl px-4 py-[8px] text-cream font-nunito text-[.88rem] leading-5 outline-none placeholder-white/20 focus:border-[rgba(255,107,53,.45)] transition-colors disabled:opacity-40 disabled:cursor-not-allowed resize-none overflow-y-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
         placeholder="Say something sneaky..."
         maxlength="500"
         autocomplete="off"
+        rows="1"
         bind:value={inputText}
         disabled={$showTimerModal}
         onkeydown={handleKeydown}
         bind:this={inputEl}
         oninput={() => {
+          resizeInput();
           if (isTyping) {
             clearTimeout(typingTimer);
           } else {
@@ -1576,9 +823,9 @@
             isTyping = false;
           }, TYPING_DELAY);
         }}
-      />
+      ></textarea>
       <button
-        class="w-[37px] text-white disabled:pointer-events-none overflow-hidden select-none pl-1 pb-1 h-[37px] shrink-0 bg-fox rounded-full border-0 cursor-pointer text-[.95rem] flex items-center justify-center transition-all hover:bg-fox-dark hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed"
+        class="w-[37px] h-[37px] mb-[1px] text-white disabled:pointer-events-none overflow-hidden select-none pl-1 pb-1 shrink-0 bg-fox rounded-full border-0 cursor-pointer text-[.95rem] flex items-center justify-center transition-all hover:bg-fox-dark hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed"
         disabled={$showTimerModal || !inputText.trim()}
         onclick={sendMsg}
       >
