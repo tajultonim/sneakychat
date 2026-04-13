@@ -27,11 +27,11 @@
 
 
 /* ── Body & background overlay ── */
-html,
+/* html,
 body {
   height: 100dvh;
-  /* overflow: hidden; */
-}
+   overflow: hidden;
+} */
 
 body::before {
   content: '';
