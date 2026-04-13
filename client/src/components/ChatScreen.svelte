@@ -160,7 +160,7 @@
     if (!text || $showTimerModal) return;
 
     onSendMessage?.({
-      text,
+      text: text,
       id: generateId(5),
       replyTo: replyToId,
     });
@@ -187,6 +187,7 @@
     onSendMessage?.({
       type: 'sticker',
       id: generateId(5),
+      text: sticker.fallbackText,
       stickerId,
     });
     stickerPickerOpen = false;
@@ -406,20 +407,20 @@
                 $messages[i - 1]?.type === 'self' && $messages[i + 1]?.type === 'self'
                   ? 'rounded-r-[4px]'
                   : $messages[i - 1]?.type === 'self'
-                    ? 'rounded-tr-[4px] mb-1'
+                    ? 'rounded-tr-[4px]'
                     : $messages[i + 1]?.type === 'self'
                       ? 'rounded-br-[4px]'
                       : 'rounded-[20px]'
-              }  ${msg.timestamp ? 'hover:mb-5' : ''} ${msg.reaction ? 'mb-5' : ''} rounded-[20px] p-2 px-3 relative max-w-[78%] text-[.88rem] leading-relaxed ${isEmoji(msg.text) ? '' : 'bg-gradient-to-br from-fox to-fox-dark text-white'} break-words animate-popin`
+              } ${$messages[i - 1]?.type !== 'self' ? 'mt-2' : ''} ${msg.timestamp ? 'hover:mb-4' : ''} ${msg.reaction ? 'mb-4' : '-mb-1'}  rounded-[20px] p-2 px-3 relative max-w-[78%] text-[.88rem] leading-relaxed ${isEmoji(msg.text) || msg.sticker ? '' : 'bg-gradient-to-br from-fox to-fox-dark text-white'} break-words animate-popin`
             : `self-start group ${
                 $messages[i - 1]?.type === 'partner' && $messages[i + 1]?.type === 'partner'
                   ? 'rounded-l-[4px]'
                   : $messages[i - 1]?.type === 'partner'
-                    ? 'rounded-tl-[4px] mb-1'
+                    ? 'rounded-tl-[4px]'
                     : $messages[i + 1]?.type === 'partner'
                       ? 'rounded-bl-[4px]'
                       : 'rounded-[20px]'
-              } ${msg.timestamp ? 'hover:mb-5' : 'mb-5'}  ${msg.reaction ? 'mb-5' : ''} rounded-[20px]  relative hover:mb-3 max-w-[78%] px-3 py-2 text-[.88rem] leading-relaxed ${isEmoji(msg.text) ? '' : 'bg-[#2C352B] text-cream border border-white/[.06]'} break-words animate-popin`}
+              } ${$messages[i - 1]?.type !== 'partner' ? 'mt-2' : ''} ${msg.timestamp ? 'hover:mb-4' : 'mb-5'}  ${msg.reaction ? 'mb-4' : '-mb-1'}  rounded-[20px]  relative hover:mb-3 max-w-[78%] px-3 py-2 text-[.88rem] leading-relaxed ${isEmoji(msg.text) || msg.sticker ? '' : 'bg-[#2C352B] text-cream border border-white/[.06]'} break-words animate-popin`}
         >
           {#if msg.replyTo && msg.type !== 'reaction'}
             <div
@@ -466,10 +467,10 @@
             <span class={`${isEmoji(msg.text) ? 'text-7xl' : ''}  select-text`}>{msg.text}</span>
           {/if}
           <span
-            class={`absolute h-[17px] mt-3 flex items-center gap-2 ${msg.type == 'self' ? 'right-0 flex-row-reverse' : 'left-0'} text-xs whitespace-nowrap text-muted`}
+            class={`absolute -my-1 w-full pt-3 flex items-center gap-2 ${msg.type == 'self' ? 'right-0 flex-row-reverse' : 'left-0'} text-xs whitespace-nowrap text-muted`}
           >
             <span
-              class={`group-hover:inline-block ${msg.timestamp ? 'hidden' : 'inline-block'} opacity-70`}
+              class={`group-hover:inline-block ${msg.timestamp ? 'hidden' : 'inline-block animate-pulse'} opacity-70`}
               >{msg.timestamp
                 ? new Date(msg.timestamp).toLocaleTimeString([], {
                     hour: '2-digit',
@@ -490,7 +491,7 @@
           </span> -->
 
           <span
-            class={`${msg.type == 'self' ? '-left-2 -translate-x-6' : '-right-2 translate-x-12 flex-row-reverse'} text-white flex group-hover:opacity-100 hover:opacity-100 opacity-0 gap-1 absolute bottom-0 [&>*]:fill-[var(--leaf)] [&>*]:border [&>*]:rounded-full [&>*]:w-[1.5rem] [&>*]:h-[1.5rem] [&>*]:cursor-pointer [&>button>*]:w-full [&>button>*]:h-full [&>button]:flex [&>button]:items-center [&>button]:justify-center [&>button]:p-1`}
+            class={` group-hover:pb-[18px] group-hover:-mb-[18px] ${msg.type == 'self' ? '-left-2 pr-5 -translate-x-5' : '-right-2 translate-x-12 pl-12 flex-row-reverse'} text-white flex group-hover:opacity-100 hover:opacity-100 opacity-0 gap-1 absolute bottom-0 [&>*]:fill-[var(--leaf)] [&>*]:border [&>*]:rounded-full [&>*]:w-[1.5rem] [&>*]:h-[1.5rem] [&>*]:cursor-pointer [&>button>*]:w-full [&>button>*]:h-full [&>button]:flex [&>button]:items-center [&>button]:justify-center [&>button]:p-1`}
           >
             <button
               class=" hover:opacity-80 opacity-40 hover:bg-purple-600/20 rounded-full hover:border-purple-500 [&>*]:hover:text-purple-500 transition-colors"
@@ -557,7 +558,7 @@
           Replying to {$messages.find((m) => m.id === replyToId)?.type == 'self' ? 'You' : 'Fox'}
         </div>
         <div class="text-gray-400 relative whitespace-nowrap text-sm w-full overflow-hidden">
-          {$messages.find((m) => m.id === replyToId)?.text}
+          {$messages.find((m) => m.id === replyToId)?.text || ''}
         </div>
         <button
           class="absolute top-1 font-bold right-2 text-gray-400 hover:text-white"
@@ -619,7 +620,7 @@
         }}
       />
       <button
-        class="w-[37px] text-white overflow-hidden select-none pl-1 pb-1 h-[37px] shrink-0 bg-fox rounded-full border-0 cursor-pointer text-[.95rem] flex items-center justify-center transition-all hover:bg-fox-dark hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed"
+        class="w-[37px] text-white disabled:pointer-events-none overflow-hidden select-none pl-1 pb-1 h-[37px] shrink-0 bg-fox rounded-full border-0 cursor-pointer text-[.95rem] flex items-center justify-center transition-all hover:bg-fox-dark hover:scale-110 disabled:opacity-40 disabled:cursor-not-allowed"
         disabled={$showTimerModal || !inputText.trim()}
         onclick={sendMsg}
       >

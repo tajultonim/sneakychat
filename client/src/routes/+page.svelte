@@ -226,31 +226,30 @@
             if (timestamp) {
               chatStore.updateMessage(id, { timestamp });
             }
-            chatStore.updateMessage(id, {
-              sticker: {
-                id: sticker.id,
-                name: sticker.name,
-                url: sticker.url,
-                type: sticker.type,
-              }
-            });
+            // chatStore.updateMessage(id, {
+            //   sticker: {
+            //     id: sticker.id,
+            //     name: sticker.name,
+            //     url: sticker.url,
+            //     type: sticker.type,
+            //     fallbackText: sticker.fallbackText,
+            //   },
+            //   text: text,
+            // });
           } else {
             // New sticker message
-            chatStore.addMessage(
-              '',
-              id,
-              from === 'self' ? 'self' : 'partner',
-              replyTo,
-              timestamp
-            );
+            chatStore.addMessage('', id, from === 'self' ? 'self' : 'partner', replyTo, timestamp);
             // Now add the sticker
+            console.log(d);
             chatStore.updateMessage(id, {
               sticker: {
                 id: sticker.id,
                 name: sticker.name,
                 url: sticker.url,
                 type: sticker.type,
-              }
+                fallbackText: sticker.fallbackText,
+              },
+              text,
             });
           }
         }
@@ -498,6 +497,7 @@
     stickerId?: string;
   }): void {
     let timestamp: number | null = null;
+    console.log(e);
     socket?.emitwithtimeout(
       'message',
       {
@@ -545,7 +545,9 @@
             name: sticker.name,
             url: sticker.url,
             type: sticker.type,
-          }
+            fallbackText: sticker.fallbackText,
+          },
+          text: e.text || sticker.fallbackText || ':sticker:',
         });
       }
     }

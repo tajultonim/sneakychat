@@ -18,6 +18,7 @@ export interface ChatMessage {
     name: string;
     url: string;
     type: 'animated' | 'static';
+    fallbackText: string;
   };
 }
 

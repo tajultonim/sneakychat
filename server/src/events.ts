@@ -4,7 +4,6 @@ import { socketPayloads, socketToChat, activeChats, matchmakingQueue } from './s
 import {
   COST_MATCH,
   COST_SKIP,
-  COST_STICKER,
   REWARD_EXTEND_BONUS,
   INITIAL_CHAT_MS,
   EXTENSION_CHAT_MS,
@@ -13,6 +12,7 @@ import { clamp, generateChatId, getCooldownMs } from './utils.js';
 import { signToken } from './tokens.js';
 import { removeFromQueue, tryMatch, requeueSocket } from './matchmaking.js';
 import { startChatTimer, endChat } from './chat.js';
+import { getStickerCost } from './stickerCosts.js';
 
 export function registerEventHandlers(io: Server, socket: Socket): void {
   // ── findFox ──────────────────────────────────────────────────────────
@@ -124,13 +124,23 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
 
       // Handle sticker cost deduction
       if (type === 'sticker') {
-        if (payload.berries < COST_STICKER) {
+        if (!stickerId) {
+          return callback({ status: 'error', msg: 'Invalid sticker selected.' });
+        }
+        const cost = getStickerCost(stickerId);
+        if (cost === null) {
+          return callback({ status: 'error', msg: 'Invalid sticker selected.' });
+        }
+        if (payload.berries < cost) {
           return callback({ status: 'error', msg: 'Not enough berries for sticker.' });
         }
-        payload.berries = clamp(payload.berries - COST_STICKER);
+        if (cost > 0) {
+          payload.berries = clamp(payload.berries - cost);
+          socket.emit('berriesUpdate', { token: signToken(payload), berries: payload.berries });
+        }
       }
 
-      const safeText = type === 'text' ? text?.slice(0, 500) || '' : '';
+      const safeText = type === 'text' || type === 'sticker' ? text?.slice(0, 500) || '' : '';
       const partnerId = chat.users.find((id) => id !== socket.id);
       const partnerSock = partnerId ? io.sockets.sockets.get(partnerId) : null;
 
@@ -148,7 +158,6 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
             timestamp: Date.now(),
           },
           (response: any) => {
-            console.log('Message delivery response from partner:', response);
             if (response === 'ok') {
               callback({ status: 'success', timestamp: Date.now() });
             } else {
