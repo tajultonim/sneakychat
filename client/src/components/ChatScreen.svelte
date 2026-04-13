@@ -184,6 +184,8 @@
     const sticker = stickerStore.getStickerById(stickerId);
     if (!sticker) return;
 
+    stickerStore.addRecentSticker(stickerId);
+
     onSendMessage?.({
       type: 'sticker',
       id: generateId(5),

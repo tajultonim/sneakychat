@@ -1,5 +1,6 @@
 // stores/stickerStore.ts
-import { writable } from 'svelte/store';
+import { browser } from '$app/environment';
+import { derived, get, writable } from 'svelte/store';
 
 export interface Sticker {
   id: string;
@@ -10,6 +11,19 @@ export interface Sticker {
   premium: boolean;
   url: string; // Path to sticker image
   fallbackText: string; // Text to display if image is missing
+}
+
+const RECENT_STICKER_LIMIT = 9;
+
+function loadRecentStickerIds(): string[] {
+  if (!browser) return [];
+
+  try {
+    const saved = localStorage.getItem('recent-sticker-ids');
+    return saved ? (JSON.parse(saved) as string[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 // GITHUB_BASE URLs for Microsoft Fluent UI Animated Emojis
@@ -137,7 +151,8 @@ export const stickerCollections = [
     cost: 2,
     premium: false,
     url: `${GITHUB_BASE}/Sleepy%20face/animated/sleepy_face_animated.png`,
-  },{
+  },
+  {
     id: 'fluent-angry',
     name: 'Angry',
     pack: 'fluent',
@@ -181,6 +196,18 @@ export const stickerCollections = [
 ];
 
 export const stickers = writable<Sticker[]>(stickerCollections);
+export const recentStickerIds = writable<string[]>(loadRecentStickerIds());
+export const recentStickers = derived(recentStickerIds, ($recentStickerIds) =>
+  $recentStickerIds
+    .map((id) => stickerCollections.find((sticker) => sticker.id === id))
+    .filter((sticker): sticker is Sticker => Boolean(sticker))
+);
+
+recentStickerIds.subscribe((ids) => {
+  if (browser) {
+    localStorage.setItem('recent-sticker-ids', JSON.stringify(ids));
+  }
+});
 
 export const stickerStore = {
   getStickers(): Sticker[] {
@@ -203,5 +230,14 @@ export const stickerStore = {
 
   getPremiumStickers(): Sticker[] {
     return stickerCollections.filter((s) => s.premium);
+  },
+
+  addRecentSticker(stickerId: string): void {
+    if (!this.getStickerById(stickerId)) return;
+
+    recentStickerIds.update((ids) => {
+      const nextIds = [stickerId, ...ids.filter((id) => id !== stickerId)];
+      return nextIds.slice(0, RECENT_STICKER_LIMIT);
+    });
   },
 };

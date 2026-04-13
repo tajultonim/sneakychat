@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { stickerStore } from '../stores/stickerStore';
+  import { recentStickers, stickerStore } from '../stores/stickerStore';
   import { berries } from '../stores/gameStore';
 
   interface StickerPickerProps {
@@ -10,10 +10,11 @@
   const { onSelect, disabled = false }: StickerPickerProps = $props();
 
   const stickers = stickerStore.getStickers();
-  const packTabs = Array.from(new Set(stickers.map((sticker) => sticker.pack)));
-  let activePack = $state(packTabs[0] ?? '');
+  const packTabs = ['recent', ...Array.from(new Set(stickers.map((sticker) => sticker.pack)))];
+  let activePack = $state('recent');
 
   function getPackLabel(pack: string): string {
+    if (pack === 'recent') return 'Recent';
     return pack
       .split('-')
       .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
@@ -21,7 +22,12 @@
   }
 
   function getActiveStickers() {
+    if (activePack === 'recent') return $recentStickers;
     return stickerStore.getStickersByPack(activePack);
+  }
+
+  function getTabStickerCount(pack: string): number {
+    return pack === 'recent' ? $recentStickers.length : stickerStore.getStickersByPack(pack).length;
   }
 
   function getMinCost(stickerList: typeof stickers): number {
@@ -65,18 +71,19 @@
       </div>
     </div>
 
-    <div class="flex flex-wrap gap-2">
+    <div class="flex gap-2 overflow-x-auto pb-1 pr-1 whitespace-nowrap scrollbar-thin">
       {#each packTabs as pack}
         <button
           type="button"
           onclick={() => (activePack = pack)}
-          class={`rounded-full px-3 py-1 text-[0.72rem] font-bold uppercase tracking-widest transition-all border ${
+          class={`shrink-0 rounded-full px-3 py-1 text-[0.72rem] font-bold uppercase tracking-widest transition-all border ${
             activePack === pack
               ? 'bg-berry text-white border-berry shadow-[0_0_0_1px_rgba(255,255,255,.08)]'
               : 'bg-white/[.06] text-cream/70 border-white/[.08] hover:bg-white/[.1] hover:text-cream'
           }`}
         >
           {getPackLabel(pack)}
+          <span class="ml-1 opacity-70">{getTabStickerCount(pack)}</span>
         </button>
       {/each}
     </div>
