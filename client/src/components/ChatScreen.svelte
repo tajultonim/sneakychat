@@ -66,6 +66,16 @@
   let gameMenuOpen = $state(false);
   let stickerPickerOpen = $state(false);
   let emojiPickerOpen = $state(false);
+  let longPressMenu = $state<{
+    messageId: string;
+    text: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let longPressStartX = 0;
+  let longPressStartY = 0;
+  let suppressNextBubbleTap = false;
 
   function handleEmojiSelect(emoji: string) {
     inputText += emoji;
@@ -83,12 +93,31 @@
   let isTyping = false;
   const TYPING_DELAY = 1000;
   const MAX_INPUT_LINES = 5;
+  const LONG_PRESS_DELAY = 450;
+  const LONG_PRESS_MOVE_TOLERANCE = 10;
 
   onMount(() => {
     gameSize.set('normal'); // Reset game size when component mounts
     resizeInput();
+    const handleGlobalContextMenu = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      const bubble = target?.closest('[data-message-id]') as HTMLElement | null;
+      if (!bubble) return;
+
+      const messageId = bubble.dataset.messageId;
+      const canOpenMenu = bubble.dataset.canMenu === 'true';
+      const messageText = bubble.dataset.messageText ?? '';
+      if (!messageId || !canOpenMenu || $showTimerModal) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      openMessageActionMenu(messageId, messageText, event.clientX, event.clientY);
+    };
+
+    window.addEventListener('contextmenu', handleGlobalContextMenu, { capture: true });
     return () => {
       if (typingTimer) clearTimeout(typingTimer);
+      window.removeEventListener('contextmenu', handleGlobalContextMenu, { capture: true });
     };
   });
 
@@ -118,6 +147,93 @@
     });
   }
 
+  function clearLongPressTimer(): void {
+    if (!longPressTimer) return;
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+
+  function closeLongPressMenu(): void {
+    longPressMenu = null;
+  }
+
+  function startLongPress(
+    event: TouchEvent,
+    messageId: string,
+    text: string,
+    canOpenMenu: boolean
+  ): void {
+    if (!canOpenMenu || $showTimerModal || event.touches.length !== 1) return;
+
+    const touch = event.touches[0];
+    longPressStartX = touch.clientX;
+    longPressStartY = touch.clientY;
+    clearLongPressTimer();
+
+    longPressTimer = setTimeout(() => {
+      suppressNextBubbleTap = true;
+      openMessageActionMenu(messageId, text, touch.clientX, touch.clientY - 16);
+    }, LONG_PRESS_DELAY);
+  }
+
+  function openMessageActionMenu(messageId: string, text: string, x: number, y: number): void {
+    reactionPickerMessageId = null;
+    const menuWidth = 172;
+    const menuHeight = 112;
+    const menuX = Math.max(12, Math.min(x, window.innerWidth - menuWidth - 12));
+    const menuY = Math.max(12, Math.min(y, window.innerHeight - menuHeight - 12));
+    longPressMenu = { messageId, text, x: menuX, y: menuY };
+  }
+
+  function handleLongPressMove(event: TouchEvent): void {
+    if (!longPressTimer || event.touches.length !== 1) return;
+
+    const touch = event.touches[0];
+    const deltaX = Math.abs(touch.clientX - longPressStartX);
+    const deltaY = Math.abs(touch.clientY - longPressStartY);
+    if (deltaX > LONG_PRESS_MOVE_TOLERANCE || deltaY > LONG_PRESS_MOVE_TOLERANCE) {
+      clearLongPressTimer();
+    }
+  }
+
+  function endLongPress(): void {
+    clearLongPressTimer();
+  }
+
+  function handleMessageBubbleClick(): void {
+    if (suppressNextBubbleTap) {
+      suppressNextBubbleTap = false;
+      return;
+    }
+    inputEl.focus();
+  }
+
+  async function copyTextToClipboard(text: string): Promise<void> {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const fallback = document.createElement('textarea');
+        fallback.value = text;
+        fallback.setAttribute('readonly', '');
+        fallback.style.position = 'fixed';
+        fallback.style.opacity = '0';
+        document.body.appendChild(fallback);
+        fallback.select();
+        document.execCommand('copy');
+        document.body.removeChild(fallback);
+      }
+    } finally {
+      closeLongPressMenu();
+    }
+  }
+
+  function replyFromLongPress(messageId: string): void {
+    replyToId = messageId;
+    closeLongPressMenu();
+    inputEl.focus();
+  }
+
   function flyPlane() {
     if (sendButtonIconEl?.classList.contains('animate-fly')) return; // prevent spamming
     void sendButtonIconEl?.offsetWidth; // restart animation trick
@@ -129,6 +245,10 @@
 
   window.addEventListener('click', (e: MouseEvent) => {
     const target = e.target as HTMLElement;
+
+    if (longPressMenu && !target?.closest('[data-longpress-menu="true"]')) {
+      closeLongPressMenu();
+    }
 
     // Close emoji reaction picker
     if (reactionPickerMessageId) {
@@ -340,6 +460,7 @@
 
   $effect(() => {
     return () => {
+      clearLongPressTimer();
       clearModalTimer();
       stopTitleFlash();
     };
@@ -402,7 +523,12 @@
   </div>
 
   <!-- ── Messages ── -->
-  <div class="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-[5px]" bind:this={messagesEl}>
+  <div
+    class="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-[5px]"
+    role="log"
+    aria-label="Chat messages"
+    bind:this={messagesEl}
+  >
     {#each $messages as msg, i (msg.id)}
       {#if msg.type === 'system'}
         <div
@@ -413,10 +539,16 @@
       {:else}
         <div
           id={`msg-${msg.id}`}
+          data-message-id={msg.id}
+          data-can-menu={!msg.sticker && msg.type !== 'reaction'}
+          data-message-text={msg.text}
           role="button"
-          onclick={() => {
-            inputEl.focus();
-          }}
+          onclick={handleMessageBubbleClick}
+          ontouchstart={(e) =>
+            startLongPress(e, msg.id, msg.text, !msg.sticker && msg.type !== 'reaction')}
+          ontouchmove={handleLongPressMove}
+          ontouchend={endLongPress}
+          ontouchcancel={endLongPress}
           tabindex="0"
           onkeydown={(e) => {
             if (e.key === 'Enter' || e.key === ' ') {
@@ -486,7 +618,7 @@
               }}
             />
           {:else}
-            <span class={`${isEmoji(msg.text) ? 'text-7xl' : 'whitespace-pre-wrap'} select-text`}
+            <span class={`${isEmoji(msg.text) ? 'text-7xl' : 'whitespace-pre-wrap'}`}
               >{msg.text}</span
             >
           {/if}
@@ -564,6 +696,32 @@
       {/if}
     {/each}
   </div>
+
+  {#if longPressMenu}
+    <button
+      class="fixed inset-0 z-40 bg-transparent border-0 cursor-default"
+      aria-label="Close message actions"
+      onclick={closeLongPressMenu}
+    ></button>
+    <div
+      data-longpress-menu="true"
+      class="fixed z-50 min-w-[160px] overflow-hidden rounded-xl border border-white/[.14] bg-[rgba(14,28,14,.96)] shadow-[0_14px_34px_rgba(0,0,0,.45)]"
+      style={`left:${longPressMenu.x}px; top:${longPressMenu.y}px;`}
+    >
+      <button
+        class="w-full text-left px-3.5 py-2.5 text-[.86rem] text-cream font-nunito hover:bg-white/[.08] transition-colors border-0 bg-transparent cursor-pointer"
+        onclick={() => copyTextToClipboard(longPressMenu.text)}
+      >
+        Copy
+      </button>
+      <button
+        class="w-full text-left px-3.5 py-2.5 text-[.86rem] text-cream font-nunito hover:bg-white/[.08] transition-colors border-0 bg-transparent cursor-pointer"
+        onclick={() => replyFromLongPress(longPressMenu.messageId)}
+      >
+        Reply
+      </button>
+    </div>
+  {/if}
 
   <!-- ── Game display ── -->
   {#if $activeGame && ($gameSize == 'normal' || $gameSize == 'maximized')}
