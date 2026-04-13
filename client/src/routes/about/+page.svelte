@@ -3,7 +3,7 @@
   import animatedFox from '../../assets/icon/animated-fox.webp';
 </script>
 
-<LegalPageLayout title="About" lastUpdated="April 10, 2026" pagetype="Doc">
+<LegalPageLayout title="About" pageId="about" lastUpdated="April 10, 2026" pagetype="Doc">
   <section class="legal-card mb-8 p-6 text-center sm:p-8">
     <div class="mb-4 flex justify-center">
       <img
