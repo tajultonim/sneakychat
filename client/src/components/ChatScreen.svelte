@@ -1420,7 +1420,9 @@
               }}
             />
           {:else}
-            <span class={`${isEmoji(msg.text) ? 'text-7xl' : ''}  select-text`}>{msg.text}</span>
+            <span class={`${isEmoji(msg.text) ? 'text-7xl' : 'whitespace-pre-wrap'} select-text`}
+              >{msg.text}</span
+            >
           {/if}
           <span
             class={`absolute -my-1 w-full pt-3 flex items-center gap-2 ${msg.type == 'self' ? 'right-0 flex-row-reverse' : 'left-0'} text-xs whitespace-nowrap text-muted`}
