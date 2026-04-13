@@ -29,7 +29,7 @@
 /* ── Body & background overlay ── */
 html,
 body {
-  height: 100dvh;
+  /* height: 100dvh; */
   /* overflow: hidden; */
 }
 

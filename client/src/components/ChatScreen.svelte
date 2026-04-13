@@ -10,6 +10,7 @@
     availableGames,
     gameSize,
   } from '../stores/gameStore.ts';
+  import { stickerStore } from '../stores/stickerStore.ts';
   import Icon from '@iconify/svelte';
   import animatedFox from '../assets/icon/animated-fox.webp';
   import {
@@ -26,6 +27,7 @@
   import { socket } from '../lib/socket.ts';
   import GameProposal from './games/GameProposal.svelte';
   import GameBoard from './games/GameBoard.svelte';
+  import StickerPicker from './StickerPicker.svelte';
   import { onMount } from 'svelte';
 
   type OutgoingMessage = {
@@ -33,7 +35,8 @@
     id: string;
     replyTo?: string | null;
     reaction?: string;
-    type?: 'reaction';
+    stickerId?: string;
+    type?: 'reaction' | 'sticker';
   };
 
   const {
@@ -62,6 +65,7 @@
   let modalAutoFinishTimeout: ReturnType<typeof setTimeout> | null = null;
   let modalTimerArmed = false;
   let gameMenuOpen = $state(false);
+  let stickerPickerOpen = $state(false);
 
   // Titlebar notification
   let originalTitle = typeof document !== 'undefined' ? document.title : '';
@@ -107,13 +111,37 @@
   }
 
   window.addEventListener('click', (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+
+    // Close emoji reaction picker
     if (reactionPickerMessageId) {
       if (
         reactionPickerEl &&
-        !reactionPickerEl.contains(e.target as Node) &&
-        !(e.target as HTMLElement | null)?.closest('.emoji-button')
+        !reactionPickerEl.contains(target) &&
+        !target?.closest('.emoji-button')
       ) {
         reactionPickerMessageId = null;
+      }
+    }
+
+    // Close game menu when clicking outside (unless clicked on game button)
+    if (gameMenuOpen && !target?.closest('.game-menu') && target?.textContent !== '🎮') {
+      if (!target?.closest('button') || target?.textContent !== '🎮') {
+        // Only close if not clicking on the game button
+        if (!target?.closest('button[aria-label="Open game menu"]')) {
+          gameMenuOpen = false;
+        }
+      }
+    }
+
+    // Close sticker picker when clicking outside
+    if (
+      stickerPickerOpen &&
+      !target?.closest('[aria-label="sticker picker"]') &&
+      target?.textContent !== '🎨'
+    ) {
+      if (!target?.closest('button[aria-label="Open sticker picker"]')) {
+        stickerPickerOpen = false;
       }
     }
   });
@@ -150,6 +178,20 @@
       reaction,
     });
     reactionPickerMessageId = null;
+  }
+
+  function sendSticker(stickerId: string): void {
+    const sticker = stickerStore.getStickerById(stickerId);
+    if (!sticker) return;
+
+    onSendMessage?.({
+      type: 'sticker',
+      id: generateId(5),
+      stickerId,
+    });
+    stickerPickerOpen = false;
+    inputEl.focus();
+    flyPlane();
   }
 
   function handleKeydown(e: KeyboardEvent): void {
@@ -410,7 +452,19 @@
               </div>
             </div>
           {/if}
-          <span class={`${isEmoji(msg.text) ? 'text-7xl' : ''}  select-text`}>{msg.text}</span>
+          {#if msg.sticker}
+            <img
+              src={msg.sticker.url}
+              alt={msg.sticker.name}
+              class="w-[100px] h-[100px] object-contain animate-popin"
+              onerror={(e) => {
+                const img = e.target as HTMLImageElement;
+                img.style.display = 'none';
+              }}
+            />
+          {:else}
+            <span class={`${isEmoji(msg.text) ? 'text-7xl' : ''}  select-text`}>{msg.text}</span>
+          {/if}
           <span
             class={`absolute h-[17px] mt-3 flex items-center gap-2 ${msg.type == 'self' ? 'right-0 flex-row-reverse' : 'left-0'} text-xs whitespace-nowrap text-muted`}
           >
@@ -489,7 +543,7 @@
   <!-- ── Game display ── -->
   {#if $activeGame && ($gameSize == 'normal' || $gameSize == 'maximized')}
     <div
-      class={`flex-1 overflow-y-auto px-3 py-3 bg-black/20 border-t border-white/[.06] ${($gameSize as any) == 'maximized' ? 'absolute bottom-16 w-full max-h-[100dvh] pt-28 overflow-scroll' : ''}`}
+      class={`flex-1 overflow-y-auto px-3 py-3 bg-black/20 border-t border-white/[.06] ${($gameSize as any) == 'maximized' ? 'absolute bottom-16 w-full max-h-[100dvh] mt-28 overflow-scroll' : ''} ${!$activeGame ? 'hidden' : ''}`}
     >
       <GameBoard />
     </div>
@@ -519,10 +573,25 @@
       <button
         class="w-[37px] h-[37px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
         disabled={$showTimerModal || $hasActiveGame}
-        onclick={() => (gameMenuOpen = !gameMenuOpen)}
+        onclick={() => {
+          gameMenuOpen = !gameMenuOpen;
+          stickerPickerOpen = false;
+        }}
         aria-label="Open game menu"
       >
         🎮
+      </button>
+
+      <button
+        class="w-[37px] h-[37px] shrink-0 rounded-full border-0 cursor-pointer text-[1rem] flex items-center justify-center transition-all bg-[rgba(124,58,237,.2)] text-berry-lt hover:bg-[rgba(124,58,237,.35)] hover:scale-110 disabled:opacity-35 disabled:cursor-not-allowed disabled:hover:scale-100"
+        disabled={$showTimerModal || $berries < 2}
+        onclick={() => {
+          stickerPickerOpen = !stickerPickerOpen;
+          gameMenuOpen = false;
+        }}
+        aria-label="Open sticker picker"
+      >
+        🎨
       </button>
 
       <input
@@ -599,6 +668,16 @@
           </button>
         {/each}
       </div>
+    </div>
+  {/if}
+
+  <!-- ── Sticker Picker ── -->
+  {#if stickerPickerOpen}
+    <div class="absolute bottom-[58px] left-3 z-40">
+      <StickerPicker
+        disabled={$showTimerModal || $berries < 2}
+        onSelect={(stickerId) => sendSticker(stickerId)}
+      />
     </div>
   {/if}
 
