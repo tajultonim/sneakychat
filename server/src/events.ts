@@ -13,6 +13,15 @@ import { signToken } from './tokens.js';
 import { removeFromQueue, tryMatch, requeueSocket } from './matchmaking.js';
 import { startChatTimer, endChat } from './chat.js';
 import { getStickerCost } from './stickerCosts.js';
+import { encryptMeta } from './tokens.js';
+
+function getClientIp(socket: Socket): string {
+  const forwarded = socket.handshake.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0].trim();
+  }
+  return socket.handshake.address || socket.conn.remoteAddress || 'unknown';
+}
 
 export function registerEventHandlers(io: Server, socket: Socket): void {
   // ── findFox ──────────────────────────────────────────────────────────
@@ -141,6 +150,16 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
       }
 
       const safeText = type === 'text' || type === 'sticker' ? text?.slice(0, 500) || '' : '';
+      const meta = encryptMeta({
+        chatId,
+        messageId: id,
+        senderId: socket.id,
+        senderIp: getClientIp(socket),
+        userAgent: payload.ua || socket.handshake.headers['user-agent'] || 'unknown',
+        sentAt: Date.now(),
+        text: safeText,
+        type,
+      });
       const partnerId = chat.users.find((id) => id !== socket.id);
       const partnerSock = partnerId ? io.sockets.sockets.get(partnerId) : null;
 
@@ -156,10 +175,11 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
             stickerId,
             type,
             timestamp: Date.now(),
+            meta,
           },
           (response: any) => {
             if (response === 'ok') {
-              callback({ status: 'success', timestamp: Date.now() });
+              callback({ status: 'success', timestamp: Date.now(), meta });
             } else {
               callback({ status: 'error', msg: 'Failed to deliver message.' });
             }
@@ -176,6 +196,7 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
             stickerId,
             type,
             timestamp: Date.now(),
+            meta,
           });
       } else {
         socket.emit('message', {
@@ -186,8 +207,9 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
           reaction,
           stickerId,
           type,
+          meta,
         });
-        callback({ status: 'error', msg: 'Your partner is offline. Message not delivered.' });
+        callback({ status: 'error', msg: 'Your partner is offline. Message not delivered.', meta });
       }
     }
   );

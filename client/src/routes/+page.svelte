@@ -26,6 +26,7 @@
   import SkipConfirmModal from '$components/SkipConfirmModal.svelte';
   import ToastManager from '$components/ToastManager.svelte';
   import ExitConfirmModal from '$components/ExitConfirmModal.svelte';
+  import ChatHistoryModal from '$components/ChatHistoryModal.svelte';
   import { partnerStatus } from '$stores/partnerStore';
   import { stickerStore } from '$stores/stickerStore';
   import { browser } from '$app/environment';
@@ -41,6 +42,7 @@
   let searchSub = 'Looking for another fox to chat with';
   let showSkipConfirm = false;
   let showExitConfirm = false;
+  let showHistoryModal = false;
   let disposeHomeRuntime: (() => void) | null = null;
 
   $: {
@@ -192,7 +194,7 @@
     });
 
     sock.on('message', (d: unknown, callback: any) => {
-      const { from, text, id, replyTo, type, reaction, timestamp, stickerId } = d as {
+      const messageEvent = d as {
         from: string;
         text: string;
         id: string;
@@ -201,7 +203,9 @@
         type?: string;
         timestamp?: number;
         stickerId?: string;
+        meta?: string;
       };
+      const { from, text, id, replyTo, type, reaction, timestamp, stickerId, meta } = messageEvent;
 
       if (callback) callback('ok');
 
@@ -224,7 +228,7 @@
           if (get(messages).find((m) => m.id === id)) {
             // Message already exists, just update timestamp and sticker
             if (timestamp) {
-              chatStore.updateMessage(id, { timestamp });
+              chatStore.updateMessage(id, { timestamp, meta });
             }
             // chatStore.updateMessage(id, {
             //   sticker: {
@@ -238,7 +242,15 @@
             // });
           } else {
             // New sticker message
-            chatStore.addMessage('', id, from === 'self' ? 'self' : 'partner', replyTo, timestamp);
+            chatStore.addMessage(
+              '',
+              id,
+              from === 'self' ? 'self' : 'partner',
+              replyTo,
+              timestamp,
+              undefined,
+              meta
+            );
             // Now add the sticker
             console.log(d);
             chatStore.updateMessage(id, {
@@ -260,6 +272,7 @@
         if (timestamp) {
           chatStore.updateMessage(id, {
             timestamp,
+            meta,
           });
         } else {
           chatStore.addQueuedMessage(text, get(roomId) || '', id, 'self', replyTo);
@@ -271,7 +284,8 @@
           from === 'self' ? 'self' : 'partner',
           replyTo,
           timestamp,
-          reaction
+          reaction,
+          meta
         );
       }
     });
@@ -523,6 +537,7 @@
         } else {
           chatStore.updateMessage(e.id, {
             timestamp: response.timestamp,
+            meta: response.meta,
           });
         }
         response.timestamp && (timestamp = response.timestamp);
@@ -580,6 +595,14 @@
   function handleExitRequest(): void {
     showExitConfirm = true;
   }
+
+  function handleViewHistory(): void {
+    showHistoryModal = true;
+  }
+
+  function handleCloseHistory(): void {
+    showHistoryModal = false;
+  }
 </script>
 
 <Fireflies count={14} />
@@ -595,7 +618,7 @@
     class={`bg-[rgba(255,248,240,0.035)] sm:border border-white/[.07] ${screen == 'chat' ? 'sm:rounded-[18px]' : 'rounded-[18px]'} overflow-hidden  backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,.22)]`}
   >
     {#if screen === 'idle'}
-      <IdleScreen on:findFox={handleFindFox} />
+      <IdleScreen on:findFox={handleFindFox} on:viewHistory={handleViewHistory} />
     {:else if screen === 'searching'}
       <SearchingScreen title={searchTitle} sub={searchSub} on:cancel={handleCancelSearch} />
     {:else if screen === 'chat'}
@@ -642,5 +665,7 @@
   on:confirm={handleExitConfirm}
   on:cancel={handleExitCancel}
 />
+
+<ChatHistoryModal visible={showHistoryModal} on:close={handleCloseHistory} />
 
 <ToastManager />
