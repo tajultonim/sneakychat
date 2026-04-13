@@ -63,7 +63,7 @@
   class="flex flex-col bg-[rgba(21,40,21,0.95)] border border-white/[.1] rounded-xl px-3 py-2 w-full max-w-[min(92vw,360px)] animate-popin"
 >
   <!-- Header -->
-  <div class="flex flex-col gap-2 px-1 py-1 mb-2">
+  <div class="flex flex-col gap-2 px-1 py-1">
     <div class="flex items-center justify-between gap-2">
       <div class="text-xs text-muted font-bold uppercase tracking-widest">🎨 Stickers</div>
       <div class="text-[0.7rem] text-muted/70 font-semibold">
@@ -90,68 +90,70 @@
   </div>
 
   <!-- Stickers Grid -->
-  <div class="grid grid-cols-3 gap-2 overflow-y-auto h-[256px] px-1">
-    {#if getActiveStickers().length > 0}
-      {#each getActiveStickers() as sticker (sticker.id)}
-        <button
-          disabled={!canAfford(sticker.cost)}
-          onclick={() => handleStickerClick(sticker.id)}
-          class={`s-${sticker.id} relative group w-20 h-20 rounded-lg border border-white/[.08] flex items-center justify-center transition-all duration-200 overflow-hidden
+  <div class="h-[256px] overflow-y-auto px-1 pt-1">
+    <div class="grid grid-cols-3 gap-2 h-min">
+      {#if getActiveStickers().length > 0}
+        {#each getActiveStickers() as sticker (sticker.id)}
+          <button
+            disabled={!canAfford(sticker.cost)}
+            onclick={() => handleStickerClick(sticker.id)}
+            class={`s-${sticker.id} relative group w-20 h-20 rounded-lg border border-white/[.08] flex items-center justify-center transition-all duration-200 overflow-hidden
             ${
               canAfford(sticker.cost)
                 ? 'bg-[rgba(124,58,237,.1)] disabled:cursor-not-allowed disabled:pointer-events-none hover:bg-[rgba(124,58,237,.2)] hover:scale-105 cursor-pointer hover:border-berry-lt/40'
                 : 'bg-[rgba(0,0,0,.2)] cursor-not-allowed opacity-50'
             }`}
-          title={sticker.name}
-        >
-          <!-- Sticker Image -->
-          <img
-            src={getPreviewUrl(sticker.url)}
-            alt={sticker.name}
-            class="w-full h-full object-contain p-1 group-hover:scale-110 transition-transform"
-            onerror={(e) => {
-              // Fallback for missing stickers
-              const target = e.target as HTMLImageElement;
-              target.style.display = 'none';
-              const fallback = document.querySelector(`.f-${sticker.id}`) as HTMLDivElement;
-              const stkr = document.querySelector(`.s-${sticker.id}`) as HTMLButtonElement;
-              if (fallback) {
-                fallback.style.display = 'flex';
-              }
-              if (stkr) {
-                stkr.classList.add('bg-red-500/20', 'border-red-400/40');
-                stkr.disabled = true;
-              }
-            }}
-          />
-
-          <!-- Fallback Emoji if image missing -->
-          <div
-            class={`f-${sticker.id} hidden absolute text-2xl ${sticker.type === 'animated' ? 'animate-bobble' : ''}`}
+            title={sticker.name}
           >
-            {sticker.premium ? '🔒' : '✨'}
-          </div>
+            <!-- Sticker Image -->
+            <img
+              src={getPreviewUrl(sticker.url)}
+              alt={sticker.name}
+              class="w-full h-full object-contain p-1 group-hover:scale-110 transition-transform"
+              onerror={(e) => {
+                // Fallback for missing stickers
+                const target = e.target as HTMLImageElement;
+                target.style.display = 'none';
+                const fallback = document.querySelector(`.f-${sticker.id}`) as HTMLDivElement;
+                const stkr = document.querySelector(`.s-${sticker.id}`) as HTMLButtonElement;
+                if (fallback) {
+                  fallback.style.display = 'flex';
+                }
+                if (stkr) {
+                  stkr.classList.add('bg-red-500/20', 'border-red-400/40');
+                  stkr.disabled = true;
+                }
+              }}
+            />
 
-          <!-- Cost Badge -->
-          <div
-            class="absolute bottom-0 right-0 bg-berry text-white text-[0.65rem] font-bold px-1 py-0.5 rounded-tl-md opacity-0 group-hover:opacity-100 transition-opacity"
-          >
-            {sticker.cost}🍇
-          </div>
-
-          <!-- Disabled Lock Overlay -->
-          {#if !canAfford(sticker.cost)}
-            <div class="absolute inset-0 bg-black/40 flex items-center justify-center">
-              <span class="text-red-400 text-lg">🔒</span>
+            <!-- Fallback Emoji if image missing -->
+            <div
+              class={`f-${sticker.id} hidden absolute text-2xl ${sticker.type === 'animated' ? 'animate-bobble' : ''}`}
+            >
+              {sticker.premium ? '🔒' : '✨'}
             </div>
-          {/if}
-        </button>
-      {/each}
-    {:else}
-      <div class="col-span-3 py-8 text-center text-sm text-muted/70">
-        No stickers in this pack yet.
-      </div>
-    {/if}
+
+            <!-- Cost Badge -->
+            <div
+              class="absolute bottom-0 right-0 bg-berry text-white text-[0.65rem] font-bold px-1 py-0.5 rounded-tl-md"
+            >
+              {sticker.cost}🍇
+            </div>
+
+            <!-- Disabled Lock Overlay -->
+            {#if !canAfford(sticker.cost)}
+              <div class="absolute inset-0 bg-black/40 flex items-center justify-center">
+                <span class="text-red-400 text-lg">🔒</span>
+              </div>
+            {/if}
+          </button>
+        {/each}
+      {:else}
+        <div class="col-span-3 py-8 text-center text-sm text-muted/70">
+          No stickers in this pack yet.
+        </div>
+      {/if}
+    </div>
   </div>
 
   <!-- Insufficient Berries Message -->
