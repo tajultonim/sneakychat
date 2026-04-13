@@ -3,9 +3,8 @@ import { writable, derived, get } from 'svelte/store';
 import { browser } from '$app/environment';
 import { roomId } from './roomStore';
 
-
 // ── Types ──────────────────────────────────────────────────────────────────────
-export type MessageType = 'self' | 'partner' | 'system' | 'reaction';
+export type MessageType = 'self' | 'partner' | 'system' | 'reaction' | 'sticker';
 
 export interface ChatMessage {
   id: string;
@@ -14,6 +13,13 @@ export interface ChatMessage {
   replyTo?: string;
   timestamp?: number;
   reaction?: string;
+  sticker?: {
+    id: string;
+    name: string;
+    url: string;
+    type: 'animated' | 'static';
+    fallbackText: string;
+  };
 }
 
 interface ChatSession {
@@ -39,13 +45,22 @@ const savedChats: ChatMessage[] = savedChatsJson ? JSON.parse(savedChatsJson) : 
 const savedQueuedMessages: QueuedMessage[] = loadQueuedMessagesFromLocalStorage();
 
 const savedSessionsTxt = browser ? localStorage.getItem('archive-messages') : null;
-const savedSessions: Record<string, ChatSession> = savedSessionsTxt ? JSON.parse(savedSessionsTxt) : {};
-
-
+const savedSessions: Record<string, ChatSession> = savedSessionsTxt
+  ? JSON.parse(savedSessionsTxt)
+  : {};
 
 // ── Messages ───────────────────────────────────────────────────────────────────
 export const messages = writable<ChatMessage[]>(savedChats);
-export const session = writable<ChatSession>(savedSessions[get(roomId) || ""] || { messages: [], lastTextAt: 0, startedAt: 0, chatId: '', userId: '', partnerId: '' });
+export const session = writable<ChatSession>(
+  savedSessions[get(roomId) || ''] || {
+    messages: [],
+    lastTextAt: 0,
+    startedAt: 0,
+    chatId: '',
+    userId: '',
+    partnerId: '',
+  }
+);
 export const queuedMessages = writable<QueuedMessage[]>(savedQueuedMessages);
 
 let _msgId = 0;
@@ -74,49 +89,63 @@ export const myExtendVote = writable<boolean>(false);
 
 // ── Persistence (for development; can be removed) ───────────────────────────────
 
-messages.subscribe(msgs => {
+messages.subscribe((msgs) => {
   if (browser) localStorage.setItem('current-messages', JSON.stringify(msgs));
-  session.update(sess => ({ ...sess, messages: msgs, lastTextAt: Date.now() }));
+  session.update((sess) => ({ ...sess, messages: msgs, lastTextAt: Date.now() }));
 });
 
-session.subscribe(sess => {
+session.subscribe((sess) => {
   saveSessionToLocalStorage(sess);
 });
 
-queuedMessages.subscribe(qm => {
+queuedMessages.subscribe((qm) => {
   if (browser) localStorage.setItem('queued-message', JSON.stringify(qm));
 });
-
 
 // ── Public API ─────────────────────────────────────────────────────────────────
 export const chatStore = {
   start(durationMs: number): void {
-    messages.set([{ id: generateChatId(), text: '🦊 You found another Sneaky Fox! Say hi!', type: 'system' }]);
+    messages.set([
+      { id: generateChatId(), text: '🦊 You found another Sneaky Fox! Say hi!', type: 'system' },
+    ]);
     myExtendVote.set(false);
     partnerWantsExtend.set(false);
     showTimerModal.set(false);
     _startTimer(durationMs);
   },
 
-  addMessage(text: string, id: string = generateChatId(), type: MessageType = 'system', replyTo?: string, timestamp?: number, reaction?: string): void {
-    if (!get(messages).find(m => m.id === id)) {
-      messages.update((ms) => [...ms, { id: id, text, type, replyTo, timestamp, reaction }].sort((a, b) => a.timestamp! && b.timestamp! ? a.timestamp! - b.timestamp! : 0));
+  addMessage(
+    text: string,
+    id: string = generateChatId(),
+    type: MessageType = 'system',
+    replyTo?: string,
+    timestamp?: number,
+    reaction?: string
+  ): void {
+    if (!get(messages).find((m) => m.id === id)) {
+      messages.update((ms) =>
+        [...ms, { id: id, text, type, replyTo, timestamp, reaction }].sort((a, b) =>
+          a.timestamp! && b.timestamp! ? a.timestamp! - b.timestamp! : 0
+        )
+      );
     }
   },
 
   updateMessage(id: string, updatedFields: Partial<ChatMessage>) {
-    messages.update(items => {
-      return items.map(item => {
-        if (item.id === id) {
-          return { ...item, ...updatedFields };
-        }
-        return item;
-      }).sort((a, b) => a.timestamp! && b.timestamp! ? a.timestamp! - b.timestamp! : 0);
+    messages.update((items) => {
+      return items
+        .map((item) => {
+          if (item.id === id) {
+            return { ...item, ...updatedFields };
+          }
+          return item;
+        })
+        .sort((a, b) => (a.timestamp! && b.timestamp! ? a.timestamp! - b.timestamp! : 0));
     });
   },
 
   updateSession(updates: Partial<ChatSession>): void {
-    session.update(sess => {
+    session.update((sess) => {
       const updated = { ...sess, ...updates };
       return updated;
     });
@@ -130,14 +159,20 @@ export const chatStore = {
     }
   },
 
-  addQueuedMessage(text: string, chatId: string, id: string, type: MessageType, replyTo?: string): void {
+  addQueuedMessage(
+    text: string,
+    chatId: string,
+    id: string,
+    type: MessageType,
+    replyTo?: string
+  ): void {
     if (!get(queuedMessages).find((m: QueuedMessage) => m.id === id)) {
       queuedMessages.update((ms) => [...ms, { text, chatId, id, type, replyTo }]);
     }
   },
 
   removeQueuedMessage(id: string): void {
-    queuedMessages.update((ms) => ms.filter(m => m.id !== id));
+    queuedMessages.update((ms) => ms.filter((m) => m.id !== id));
   },
 
   showModal(): void {
@@ -177,8 +212,7 @@ export const chatStore = {
   resetTimer(durationMs: number): void {
     _stopTimer();
     _startTimer(durationMs);
-  }
-
+  },
 };
 
 function _startTimer(durationMs: number): void {
@@ -199,7 +233,6 @@ function _stopTimer(): void {
   if (_timerInterval) clearInterval(_timerInterval);
   timerRemaining.set(0);
 }
-
 
 function saveSessionToLocalStorage(ses: ChatSession): void {
   if (!browser) return;
@@ -223,10 +256,10 @@ function loadQueuedMessagesFromLocalStorage(): QueuedMessage[] {
 }
 
 function sanitizeArray(arr: any[]): any[] {
-  return arr.flatMap(item => {
-    if (item === null) return [];              // remove nulls
+  return arr.flatMap((item) => {
+    if (item === null) return []; // remove nulls
     if (Array.isArray(item)) return sanitizeArray(item); // flatten nested arrays
-    if (typeof item === "object") return [item]; // keep objects
+    if (typeof item === 'object') return [item]; // keep objects
     return [];
   });
 }

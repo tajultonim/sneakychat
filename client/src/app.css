@@ -29,9 +29,9 @@
 /* ── Body & background overlay ── */
 /* html,
 body {
-  height: 100dvh;
-   overflow: hidden;
-} */
+  /* height: 100dvh; */
+  /* overflow: hidden; */
+/* } */
 
 body::before {
   content: '';

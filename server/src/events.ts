@@ -1,11 +1,18 @@
 import { Server, Socket } from 'socket.io';
 import type { FoxPayload } from './types.js';
 import { socketPayloads, socketToChat, activeChats, matchmakingQueue } from './state.js';
-import { COST_MATCH, COST_SKIP, REWARD_EXTEND_BONUS, INITIAL_CHAT_MS, EXTENSION_CHAT_MS } from './constants.js';
+import {
+  COST_MATCH,
+  COST_SKIP,
+  REWARD_EXTEND_BONUS,
+  INITIAL_CHAT_MS,
+  EXTENSION_CHAT_MS,
+} from './constants.js';
 import { clamp, generateChatId, getCooldownMs } from './utils.js';
 import { signToken } from './tokens.js';
 import { removeFromQueue, tryMatch, requeueSocket } from './matchmaking.js';
 import { startChatTimer, endChat } from './chat.js';
+import { getStickerCost } from './stickerCosts.js';
 
 export function registerEventHandlers(io: Server, socket: Socket): void {
   // ── findFox ──────────────────────────────────────────────────────────
@@ -85,19 +92,58 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
   socket.on(
     'message',
     (
-      { id, replyTo, text, type, reaction }: { id: string; replyTo?: string; text?: string; type: 'text' | 'reaction'; reaction?: string },
-      callback: (response: any) => void,
+      {
+        id,
+        replyTo,
+        text,
+        type,
+        reaction,
+        stickerId,
+      }: {
+        id: string;
+        replyTo?: string;
+        text?: string;
+        type: 'text' | 'reaction' | 'sticker';
+        reaction?: string;
+        stickerId?: string;
+      },
+      callback: (response: any) => void
     ) => {
       if (!callback || typeof callback !== 'function') return;
-      if (type !== 'reaction' && (!text || typeof text !== 'string')) return;
-      const chatId = socketToChat.get(socket.id);
+      if (type === 'text' && (!text || typeof text !== 'string')) return;
+      if (type === 'sticker' && !stickerId) return;
 
+      const chatId = socketToChat.get(socket.id);
       if (!chatId) return socket.emit('error', { msg: 'Not in a chat.' });
+
       const chat = activeChats.get(chatId);
       if (!chat) return;
-      const safeText = type === 'reaction' ? '' : (text?.slice(0, 500) || '');
+
+      const payload = socketPayloads.get(socket.id);
+      if (!payload) return;
+
+      // Handle sticker cost deduction
+      if (type === 'sticker') {
+        if (!stickerId) {
+          return callback({ status: 'error', msg: 'Invalid sticker selected.' });
+        }
+        const cost = getStickerCost(stickerId);
+        if (cost === null) {
+          return callback({ status: 'error', msg: 'Invalid sticker selected.' });
+        }
+        if (payload.berries < cost) {
+          return callback({ status: 'error', msg: 'Not enough berries for sticker.' });
+        }
+        if (cost > 0) {
+          payload.berries = clamp(payload.berries - cost);
+          socket.emit('berriesUpdate', { token: signToken(payload), berries: payload.berries });
+        }
+      }
+
+      const safeText = type === 'text' || type === 'sticker' ? text?.slice(0, 500) || '' : '';
       const partnerId = chat.users.find((id) => id !== socket.id);
       const partnerSock = partnerId ? io.sockets.sockets.get(partnerId) : null;
+
       if (partnerSock) {
         partnerSock.emit(
           'message',
@@ -107,25 +153,27 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
             id,
             replyTo,
             reaction,
+            stickerId,
             type,
             timestamp: Date.now(),
           },
           (response: any) => {
-            console.log('Message delivery response from partner:', response);
             if (response === 'ok') {
               callback({ status: 'success', timestamp: Date.now() });
             } else {
               callback({ status: 'error', msg: 'Failed to deliver message.' });
             }
-          },
+          }
         );
-        if (type === 'reaction')
+        // Echo sticker/reaction messages back to sender
+        if (type === 'reaction' || type === 'sticker')
           socket.emit('message', {
             from: 'self',
             text: safeText,
             id,
             replyTo,
             reaction,
+            stickerId,
             type,
             timestamp: Date.now(),
           });
@@ -136,11 +184,12 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
           id,
           replyTo,
           reaction,
+          stickerId,
           type,
         });
         callback({ status: 'error', msg: 'Your partner is offline. Message not delivered.' });
       }
-    },
+    }
   );
 
   // ── extendChat ──────────────────────────────────────────────────────
@@ -248,10 +297,7 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
   // ── rejoinRoom ─────────────────────────────────────────────────────
   socket.on(
     'rejoinRoom',
-    (
-      { roomId, ouid }: { roomId: string; ouid: string },
-      callback: (response: any) => void,
-    ) => {
+    ({ roomId, ouid }: { roomId: string; ouid: string }, callback: (response: any) => void) => {
       if (!callback || typeof callback !== 'function') return;
       const chatId = roomId;
       const chat = activeChats.get(chatId);
@@ -300,7 +346,7 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
           timestamp: Date.now(),
         });
       }
-    },
+    }
   );
 
   // ── exitChat ────────────────────────────────────────────────────────

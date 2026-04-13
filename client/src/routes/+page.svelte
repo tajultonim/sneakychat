@@ -27,6 +27,7 @@
   import ToastManager from '$components/ToastManager.svelte';
   import ExitConfirmModal from '$components/ExitConfirmModal.svelte';
   import { partnerStatus } from '$stores/partnerStore';
+  import { stickerStore } from '$stores/stickerStore';
   import { browser } from '$app/environment';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
@@ -191,7 +192,7 @@
     });
 
     sock.on('message', (d: unknown, callback: any) => {
-      const { from, text, id, replyTo, type, reaction, timestamp } = d as {
+      const { from, text, id, replyTo, type, reaction, timestamp, stickerId } = d as {
         from: string;
         text: string;
         id: string;
@@ -199,6 +200,7 @@
         reaction?: string;
         type?: string;
         timestamp?: number;
+        stickerId?: string;
       };
 
       if (callback) callback('ok');
@@ -213,6 +215,44 @@
         chatStore.updateMessage(replyTo, {
           reaction: reaction || '',
         });
+        return;
+      }
+
+      if (type === 'sticker' && stickerId) {
+        const sticker = stickerStore.getStickerById(stickerId);
+        if (sticker) {
+          if (get(messages).find((m) => m.id === id)) {
+            // Message already exists, just update timestamp and sticker
+            if (timestamp) {
+              chatStore.updateMessage(id, { timestamp });
+            }
+            // chatStore.updateMessage(id, {
+            //   sticker: {
+            //     id: sticker.id,
+            //     name: sticker.name,
+            //     url: sticker.url,
+            //     type: sticker.type,
+            //     fallbackText: sticker.fallbackText,
+            //   },
+            //   text: text,
+            // });
+          } else {
+            // New sticker message
+            chatStore.addMessage('', id, from === 'self' ? 'self' : 'partner', replyTo, timestamp);
+            // Now add the sticker
+            console.log(d);
+            chatStore.updateMessage(id, {
+              sticker: {
+                id: sticker.id,
+                name: sticker.name,
+                url: sticker.url,
+                type: sticker.type,
+                fallbackText: sticker.fallbackText,
+              },
+              text,
+            });
+          }
+        }
         return;
       }
 
@@ -453,9 +493,11 @@
     id: string;
     replyTo?: string | null;
     reaction?: string;
-    type?: 'reaction';
+    type?: 'reaction' | 'sticker';
+    stickerId?: string;
   }): void {
     let timestamp: number | null = null;
+    console.log(e);
     socket?.emitwithtimeout(
       'message',
       {
@@ -463,7 +505,8 @@
         id: e.id,
         replyTo: e.replyTo,
         reaction: e.reaction,
-        type: e.type,
+        type: e.type || 'text',
+        stickerId: e.stickerId,
       },
       (error: any, response: any) => {
         console.log(response, error);
@@ -473,7 +516,7 @@
             e.text || '',
             get(roomId) || '',
             e.id,
-            'self',
+            e.type === 'sticker' ? 'sticker' : 'self',
             e.replyTo || ''
           );
           return;
@@ -486,8 +529,27 @@
       }
     );
 
+    // Handle text messages
     if (!e.type && e.text) {
       chatStore.addMessage(e.text, e.id, 'self', e.replyTo ?? undefined, timestamp ?? undefined);
+    }
+
+    // Handle sticker messages
+    if (e.type === 'sticker' && e.stickerId) {
+      const sticker = stickerStore.getStickerById(e.stickerId);
+      if (sticker) {
+        chatStore.addMessage('', e.id, 'self', e.replyTo ?? undefined, timestamp ?? undefined);
+        chatStore.updateMessage(e.id, {
+          sticker: {
+            id: sticker.id,
+            name: sticker.name,
+            url: sticker.url,
+            type: sticker.type,
+            fallbackText: sticker.fallbackText,
+          },
+          text: e.text || sticker.fallbackText || ':sticker:',
+        });
+      }
     }
   }
   function handleSkipRequest(): void {
@@ -548,7 +610,7 @@
   </div>
 
   {#if screen !== 'chat'}
-    <footer class="legal-footer">
+    <footer class="legal-footer pb-4">
       <div class="legal-footer-links">
         <a href="/about" class="legal-footer-link">About</a>
         <a href="/privacy" class="legal-footer-link">Privacy Policy</a>
