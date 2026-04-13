@@ -55,6 +55,7 @@
   let inputText = $state('');
   let messagesEl: HTMLDivElement;
   let inputEl: HTMLTextAreaElement;
+  let wrapperEl: HTMLDivElement;
   let reactionPickerEl = $state<HTMLDivElement | null>(null);
   let sendButtonIconEl = $state<HTMLSpanElement | null>(null);
   let replyToId = $state<string | null>(null);
@@ -99,25 +100,8 @@
   onMount(() => {
     gameSize.set('normal'); // Reset game size when component mounts
     resizeInput();
-    const handleGlobalContextMenu = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      const bubble = target?.closest('[data-message-id]') as HTMLElement | null;
-      if (!bubble) return;
-
-      const messageId = bubble.dataset.messageId;
-      const canOpenMenu = bubble.dataset.canMenu === 'true';
-      const messageText = bubble.dataset.messageText ?? '';
-      if (!messageId || !canOpenMenu || $showTimerModal) return;
-
-      event.preventDefault();
-      event.stopPropagation();
-      openMessageActionMenu(messageId, messageText, event.clientX, event.clientY);
-    };
-
-    window.addEventListener('contextmenu', handleGlobalContextMenu, { capture: true });
     return () => {
       if (typingTimer) clearTimeout(typingTimer);
-      window.removeEventListener('contextmenu', handleGlobalContextMenu, { capture: true });
     };
   });
 
@@ -169,7 +153,7 @@
     longPressStartX = touch.clientX;
     longPressStartY = touch.clientY;
     clearLongPressTimer();
-
+    console.log(event);
     longPressTimer = setTimeout(() => {
       suppressNextBubbleTap = true;
       openMessageActionMenu(messageId, text, touch.clientX, touch.clientY - 16);
@@ -180,8 +164,8 @@
     reactionPickerMessageId = null;
     const menuWidth = 172;
     const menuHeight = 112;
-    const menuX = Math.max(12, Math.min(x, window.innerWidth - menuWidth - 12));
-    const menuY = Math.max(12, Math.min(y, window.innerHeight - menuHeight - 12));
+    const menuX = Math.max(12, Math.min(x, wrapperEl.clientWidth - menuWidth - 12));
+    const menuY = Math.max(12, Math.min(y, wrapperEl.clientHeight - menuHeight - 12));
     longPressMenu = { messageId, text, x: menuX, y: menuY };
   }
 
@@ -198,6 +182,21 @@
 
   function endLongPress(): void {
     clearLongPressTimer();
+  }
+
+  function handleMessageContextMenu(
+    event: MouseEvent,
+    messageId: string,
+    text: string,
+    canOpenMenu: boolean
+  ): void {
+    if (!canOpenMenu || $showTimerModal) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    suppressNextBubbleTap = true;
+    console.log(event);
+    openMessageActionMenu(messageId, text, event.clientX, event.clientY);
   }
 
   function handleMessageBubbleClick(): void {
@@ -244,6 +243,7 @@
   }
 
   window.addEventListener('click', (e: MouseEvent) => {
+    if (e.button !== 0) return;
     const target = e.target as HTMLElement;
 
     if (longPressMenu && !target?.closest('[data-longpress-menu="true"]')) {
@@ -468,7 +468,7 @@
 </script>
 
 <!-- Outer wrapper fills the card height -->
-<div class="flex flex-col h-[100dvh] sm:h-[calc(100dvh-1.5rem)] relative">
+<div bind:this={wrapperEl} class="flex flex-col h-[100dvh] sm:h-[calc(100dvh-1.5rem)] relative">
   <!-- ── Chat header ── -->
   <div
     class="flex items-center gap-2.5 px-3 py-2 bg-[rgba(255,107,53,.07)] border-b border-white/[.06] shrink-0"
@@ -544,6 +544,9 @@
           data-message-text={msg.text}
           role="button"
           onclick={handleMessageBubbleClick}
+          oncontextmenu={(e) => {
+            handleMessageContextMenu(e, msg.id, msg.text, !msg.sticker && msg.type !== 'reaction');
+          }}
           ontouchstart={(e) =>
             startLongPress(e, msg.id, msg.text, !msg.sticker && msg.type !== 'reaction')}
           ontouchmove={handleLongPressMove}
