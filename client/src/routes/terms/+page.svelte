@@ -2,7 +2,12 @@
   import LegalPageLayout from '$components/LegalPageLayout.svelte';
 </script>
 
-<LegalPageLayout title="Terms & Conditions" lastUpdated="April 10, 2026" pagetype="Legal">
+<LegalPageLayout
+  title="Terms & Conditions"
+  pageId="terms"
+  lastUpdated="April 10, 2026"
+  pagetype="Legal"
+>
   <section class="legal-highlight legal-highlight-leaf">
     <div class="legal-highlight-icon">📋</div>
     <p class="legal-highlight-text">

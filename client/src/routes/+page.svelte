@@ -616,7 +616,9 @@
         <a href="/privacy" class="legal-footer-link">Privacy Policy</a>
         <a href="/terms" class="legal-footer-link">Terms &amp; Conditions</a>
       </div>
-      <p class="legal-footer-copy">&copy; 2025 SneakyChat. All rights reserved.</p>
+      <p class="legal-footer-copy">
+        &copy; {new Date().getFullYear()} SneakyChat. All rights reserved.
+      </p>
       <p class="legal-footer-copy">
         Made with 🍇 by <a
           href="http://instagram.com/telap0ka"
