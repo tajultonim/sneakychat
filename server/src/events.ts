@@ -9,11 +9,10 @@ import {
   EXTENSION_CHAT_MS,
 } from './constants.js';
 import { clamp, generateChatId, getCooldownMs } from './utils.js';
-import { signToken } from './tokens.js';
+import { encryptMeta, signToken } from './tokens.js';
 import { removeFromQueue, tryMatch, requeueSocket } from './matchmaking.js';
 import { startChatTimer, endChat } from './chat.js';
 import { getStickerCost } from './stickerCosts.js';
-import { encryptMeta } from './tokens.js';
 
 function getClientIp(socket: Socket): string {
   const forwarded = socket.handshake.headers['x-forwarded-for'];
@@ -160,6 +159,7 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
         text: safeText,
         type,
       });
+
       const partnerId = chat.users.find((id) => id !== socket.id);
       const partnerSock = partnerId ? io.sockets.sockets.get(partnerId) : null;
 

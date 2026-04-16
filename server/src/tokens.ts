@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { createCipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 import type { FoxPayload } from './types.js';
 import { STARTING_BERRIES } from './constants.js';
 
@@ -17,6 +17,27 @@ export function encryptMeta(payload: unknown): string {
     '.'
   );
 }
+
+export function decryptMeta(encrypted: string): unknown {
+  try {
+    const [ivB64, authTagB64, ciphertextB64] = encrypted.split('.');
+
+    const key = createHash('sha256').update(JWT_SECRET).digest();
+    const iv = Buffer.from(ivB64, 'base64');
+    const authTag = Buffer.from(authTagB64, 'base64');
+    const ciphertext = Buffer.from(ciphertextB64, 'base64');
+
+    const decipher = createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(authTag);
+
+    const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    return JSON.parse(plaintext.toString('utf8'));
+  } catch {
+    return null;
+  }
+}
+
+
 
 export function signToken(payload: FoxPayload): string {
   const { iat, ...rest } = payload;
