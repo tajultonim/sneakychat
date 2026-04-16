@@ -1,6 +1,12 @@
 import { Server, Socket } from 'socket.io';
-import type { FoxPayload } from './types.js';
-import { socketPayloads, socketToChat, activeChats, matchmakingQueue } from './state.js';
+import type { ExtendedSocket, FoxPayload } from './types.js';
+import {
+  activeChats,
+  matchmakingQueue,
+  userIdToSocket,
+  userIdToChat,
+  userPayloads,
+} from './state.js';
 import {
   COST_MATCH,
   COST_SKIP,
@@ -8,14 +14,13 @@ import {
   INITIAL_CHAT_MS,
   EXTENSION_CHAT_MS,
 } from './constants.js';
-import { clamp, generateChatId, getCooldownMs } from './utils.js';
-import { signToken } from './tokens.js';
+import { clamp, generateChatId, getCooldownMs, getSocketByUserId } from './utils.js';
+import { encryptMeta, signToken } from './tokens.js';
 import { removeFromQueue, tryMatch, requeueSocket } from './matchmaking.js';
 import { startChatTimer, endChat } from './chat.js';
 import { getStickerCost } from './stickerCosts.js';
-import { encryptMeta } from './tokens.js';
 
-function getClientIp(socket: Socket): string {
+export function getClientIp(socket: Socket): string {
   const forwarded = socket.handshake.headers['x-forwarded-for'];
   if (typeof forwarded === 'string' && forwarded.trim()) {
     return forwarded.split(',')[0].trim();
@@ -23,42 +28,45 @@ function getClientIp(socket: Socket): string {
   return socket.handshake.address || socket.conn.remoteAddress || 'unknown';
 }
 
-export function registerEventHandlers(io: Server, socket: Socket): void {
+export function registerEventHandlers(io: Server, socket: ExtendedSocket): void {
   // ── findFox ──────────────────────────────────────────────────────────
   socket.on('findFox', () => {
-    const payload = socketPayloads.get(socket.id);
-    if (!payload) return;
-    if (socketToChat.has(socket.id)) return socket.emit('error', { msg: 'Already in a chat!' });
-    if (matchmakingQueue.find((e) => e.socketId === socket.id))
+    if (!socket.foxData) return;
+    if (userIdToChat.has(socket.foxData.userId))
+      return socket.emit('error', { msg: 'Already connected!' });
+
+    if (matchmakingQueue.find((e) => e.payload.userId === socket.foxData.userId))
       return socket.emit('error', { msg: 'Already searching...' });
     if (
-      payload.berries < 50 &&
-      payload.lastMatch &&
-      payload.lastMatch + getCooldownMs(payload.berries) > Date.now()
+      socket.foxData.berries < 50 &&
+      socket.foxData.lastMatch &&
+      socket.foxData.lastMatch + getCooldownMs(socket.foxData.berries) > Date.now()
     )
       return socket.emit('noberries', { msg: 'Fox is tired! Wait for cooldown.' });
 
-    const partner = tryMatch(socket.id);
+    const partner = tryMatch(socket.foxData.userId);
     if (partner) {
-      const partnerPayload = socketPayloads.get(partner.socketId);
-      const partnerSocket = io.sockets.sockets.get(partner.socketId);
+      const partnerPayload = partner.payload;
+      const partnerSocket = getSocketByUserId(io, partner.payload.userId);
 
-      payload.berries = clamp(payload.berries - COST_MATCH);
+      socket.foxData.berries = clamp(socket.foxData.berries - COST_MATCH);
       if (partnerPayload) partnerPayload.berries = clamp(partnerPayload.berries - COST_MATCH);
 
       const chatId = generateChatId();
       activeChats.set(chatId, {
-        users: [socket.id, partner.socketId],
+        users: [socket.foxData.userId, partner.payload.userId],
         extendVotes: new Set(),
         timer: null,
         phase: 'initial',
         timerEndedAt: null,
         startedAt: Date.now(),
       });
-      socketToChat.set(socket.id, chatId);
-      socketToChat.set(partner.socketId, chatId);
-      payload.activeChatId = chatId;
-      payload.lastMatch = Date.now();
+
+      userIdToChat.set(socket.foxData.userId, chatId);
+      userIdToChat.set(partner.payload.userId, chatId);
+
+      socket.foxData.activeChatId = chatId;
+      socket.foxData.lastMatch = Date.now();
       if (partnerPayload) {
         partnerPayload.activeChatId = chatId;
         partnerPayload.lastMatch = Date.now();
@@ -67,11 +75,11 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
       startChatTimer(io, chatId, INITIAL_CHAT_MS);
 
       socket.emit('matched', {
-        token: signToken(payload),
+        token: signToken(socket.foxData),
         chatId,
         partnerId: partnerSocket?.id,
-        userId: socket.id,
-        berries: payload.berries,
+        userId: socket.foxData.userId,
+        berries: socket.foxData.berries,
         durationMs: INITIAL_CHAT_MS,
         msg: '🦊 You found another Sneaky Fox! Start chatting!',
       });
@@ -82,18 +90,18 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
         partnerSocket.emit('matched', {
           token: signToken(partnerPayload),
           chatId,
-          partnerId: partnerSocket.id,
-          userId: partner.socketId,
+          partnerId: socket.id,
+          userId: partner.payload.userId,
           berries: partnerPayload.berries,
           durationMs: INITIAL_CHAT_MS,
           msg: '🦊 A Sneaky Fox found you! Start chatting!',
         });
       }
-      console.log(`💬 Chat ${chatId}: ${socket.id} <-> ${partner.socketId}`);
+      console.log(`💬 Chat ${chatId}: ${socket.foxData.userId} <-> ${partner.payload.userId}`);
     } else {
-      matchmakingQueue.push({ socketId: socket.id, payload });
+      matchmakingQueue.push({ socketId: socket.id, payload: socket.foxData });
       socket.emit('searching', { msg: '🔍 Searching the forest for another fox...' });
-      console.log(`🔍 Queued: ${socket.id} | Queue: ${matchmakingQueue.length}`);
+      console.log(`🔍 Queued: ${socket.foxData.userId} | Queue: ${matchmakingQueue.length}`);
     }
   });
 
@@ -122,13 +130,13 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
       if (type === 'text' && (!text || typeof text !== 'string')) return;
       if (type === 'sticker' && !stickerId) return;
 
-      const chatId = socketToChat.get(socket.id);
+      const chatId = userIdToChat.get(socket.foxData?.userId || '');
       if (!chatId) return socket.emit('error', { msg: 'Not in a chat.' });
 
       const chat = activeChats.get(chatId);
       if (!chat) return;
 
-      const payload = socketPayloads.get(socket.id);
+      const payload = userPayloads.get(socket.foxData?.userId || '');
       if (!payload) return;
 
       // Handle sticker cost deduction
@@ -153,15 +161,19 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
       const meta = encryptMeta({
         chatId,
         messageId: id,
-        senderId: socket.id,
+        senderId: socket.foxData?.userId,
         senderIp: getClientIp(socket),
         userAgent: payload.ua || socket.handshake.headers['user-agent'] || 'unknown',
         sentAt: Date.now(),
         text: safeText,
         type,
+        reaction,
+        stickerId,
+        replyTo,
       });
-      const partnerId = chat.users.find((id) => id !== socket.id);
-      const partnerSock = partnerId ? io.sockets.sockets.get(partnerId) : null;
+
+      const partnerId = chat.users.find((userId) => userId !== socket.foxData?.userId);
+      const partnerSock = getSocketByUserId(io, partnerId);
 
       if (partnerSock) {
         partnerSock.emit(
@@ -216,16 +228,17 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
 
   // ── extendChat ──────────────────────────────────────────────────────
   socket.on('extendChat', () => {
-    const chatId = socketToChat.get(socket.id);
+    const chatId = userIdToChat.get(socket.foxData?.userId || '');
     if (!chatId) return socket.emit('error', { msg: 'Not in a chat.' });
     const chat = activeChats.get(chatId);
     if (!chat) return;
     if (!chat.timerEndedAt) return socket.emit('info', { msg: '⏳ Timer is still running!' });
-    if (chat.extendVotes.has(socket.id))
+    if (chat.extendVotes.has(socket.foxData?.userId || ''))
       return socket.emit('info', { msg: 'You already voted to extend!' });
-    chat.extendVotes.add(socket.id);
-    const partnerId = chat.users.find((id) => id !== socket.id);
-    const partnerSock = partnerId ? io.sockets.sockets.get(partnerId) : null;
+    chat.extendVotes.add(socket.foxData?.userId || '');
+    const partnerId = chat.users.find((userId) => userId !== socket.foxData?.userId);
+   
+    const partnerSock = getSocketByUserId(io, partnerId);
     if (partnerSock)
       partnerSock.emit('extendRequest', {
         msg: '🍇 The other fox wants to keep chatting! Agree to extend?',
@@ -235,9 +248,9 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
       chat.extendVotes.clear();
       chat.phase = 'extended';
       chat.timerEndedAt = null;
-      chat.users.forEach((uid) => {
-        const p = socketPayloads.get(uid);
-        const s = io.sockets.sockets.get(uid);
+      chat.users.forEach((userId) => {
+        const p = userPayloads.get(userId);
+        const s = getSocketByUserId(io, userId);
         if (!p) return;
         p.berries = clamp(p.berries + REWARD_EXTEND_BONUS);
         const t = signToken(p);
@@ -256,38 +269,40 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
 
   // ── chatComplete ────────────────────────────────────────────────────
   socket.on('chatComplete', () => {
-    const chatId = socketToChat.get(socket.id);
+    const chatId = userIdToChat.get(socket.foxData?.userId || '');
     if (!chatId) return;
     const chat = activeChats.get(chatId);
     if (!chat) return;
     if (!chat.timerEndedAt) return socket.emit('info', { msg: "⏳ Chat timer hasn't ended yet!" });
-    endChat(io, chatId, socket.id, 'complete');
+    endChat(io, chatId, socket.foxData?.userId || '', 'complete');
   });
 
   // ── skip ─────────────────────────────────────────────────────────────
   socket.on('skip', () => {
-    const payload = socketPayloads.get(socket.id);
+    const payload = userPayloads.get(socket.foxData?.userId || '');
     if (!payload) return;
-    const chatId = socketToChat.get(socket.id);
+    const chatId = userIdToChat.get(socket.foxData?.userId || '');
 
     if (chatId) {
       payload.berries = clamp(payload.berries - COST_SKIP);
       socket.emit('berriesUpdate', { token: signToken(payload), berries: payload.berries });
-      endChat(io, chatId, socket.id, 'skip');
+      endChat(io, chatId, socket.foxData?.userId || '', 'skip');
     } else {
-      removeFromQueue(socket.id);
+      removeFromQueue(socket.foxData?.userId || '');
       socket.emit('idle', { msg: '🦊 You stopped searching.' });
     }
   });
 
   // ── disconnect ──────────────────────────────────────────────────────
   socket.on('disconnect', () => {
-    removeFromQueue(socket.id);
-    const chatId = socketToChat.get(socket.id);
+    const userId = socket.foxData?.userId;
+    if (!userId) return;
+    removeFromQueue(userId);
+    const chatId = userIdToChat.get(userId);
     const chat = activeChats.get(chatId || '');
     if (!chat) return;
-    const partnerId = chat.users.find((id) => id !== socket.id);
-    const partnerSock = partnerId ? io.sockets.sockets.get(partnerId) : null;
+    const partnerId = chat.users.find((uid) => uid !== userId);
+    const partnerSock = getSocketByUserId(io, partnerId);
     if (partnerSock) {
       partnerSock.emit('partner-status', { status: 'offline' });
       partnerSock.emit('message', {
@@ -296,86 +311,77 @@ export function registerEventHandlers(io: Server, socket: Socket): void {
         timestamp: Date.now(),
       });
     } else {
-      endChat(io, chatId || '', socket.id, 'disconnect');
+      endChat(io, chatId || '', userId, 'disconnect');
     }
-    socketPayloads.delete(socket.id);
-    console.log(`👋 Left: ${socket.id} | Online: ${io.sockets.sockets.size}`);
+    userPayloads.delete(userId);
+    userIdToSocket.delete(userId);
+    console.log(`👋 Left: ${userId} | Online: ${io.sockets.sockets.size}`);
   });
 
   // ── typing ─────────────────────────────────────────────────────────
   socket.on('typing', ({ isTyping }: { isTyping: boolean }) => {
-    const chatId = socketToChat.get(socket.id);
+    const chatId = userIdToChat.get(socket.foxData?.userId || '');
     if (!chatId) return;
     const chat = activeChats.get(chatId);
     if (!chat) return;
-    const partnerId = chat.users.find((id) => id !== socket.id);
-    const partnerSock = partnerId ? io.sockets.sockets.get(partnerId) : null;
+    const partnerId = chat.users.find((userId) => userId !== socket.foxData?.userId);
+    const partnerSock = getSocketByUserId(io, partnerId);
     if (partnerSock)
       partnerSock.emit('partner-status', {
         status: isTyping ? 'typing' : 'online',
       });
   });
 
-  // ── rejoinRoom ─────────────────────────────────────────────────────
-  socket.on(
-    'rejoinRoom',
-    ({ roomId, ouid }: { roomId: string; ouid: string }, callback: (response: any) => void) => {
-      if (!callback || typeof callback !== 'function') return;
-      const chatId = roomId;
-      const chat = activeChats.get(chatId);
-      if (!chat) return callback({ msg: 'Chat not found.', status: 'error' });
-      if (!chat.timer) return callback({ msg: 'Chat timed out.', status: 'error' });
+  // ── exitChat ────────────────────────────────────────────────────────
+  socket.on('exitChat', () => {
+    const userId = socket.foxData?.userId;
+    if (!userId) return;
+    removeFromQueue(userId);
+    const chatId = userIdToChat.get(userId);
+    if (chatId) endChat(io, chatId, userId, 'disconnect');
+    socket.emit('idle', { msg: '🦊 You left the chat.' });
+  });
+}
 
-      console.log(chat.users, ouid, socket.id);
-      if (!chat.users.includes(ouid)) {
-        return callback({
-          msg: 'You were not part of this chat.',
-          status: 'error',
-        });
-      }
+export function rejoinUserIfChatIDExists(io: Server, socket: ExtendedSocket): void {
+  const foxData = socket.foxData;
+  if (!foxData || !foxData.userId) return;
 
-      let partnerId = chat.users.find((id) => id !== ouid);
-      if (!partnerId) return callback({ msg: 'Partner not found.', status: 'error' });
-      let partnerSock = io.sockets.sockets.get(partnerId);
-      if (!partnerSock) return callback({ msg: 'Partner not found.', status: 'error' });
+  userIdToSocket.set(foxData.userId, socket.id);
 
-      activeChats.set(chatId, { ...chat, users: [socket.id, partnerSock.id] });
-      socketToChat.set(socket.id, chatId);
-      socketToChat.set(partnerSock.id, chatId);
-      const payload = socketPayloads.get(socket.id);
-      if (payload) {
-        payload.activeChatId = roomId;
-        callback({
+  if (foxData.activeChatId) {
+    console.log(foxData.activeChatId);
+    const chatId = foxData.activeChatId;
+    const chat = activeChats.get(chatId);
+    if (chat) {
+      const partnerId = chat.users.find((userId) => userId !== foxData.userId);
+      const partnerSock = getSocketByUserId(io, partnerId);
+      if (partnerSock) {
+        activeChats.set(chatId, { ...chat, users: [foxData.userId, partnerId || ''] });
+        userIdToChat.set(foxData.userId, chatId);
+        if (partnerId) userIdToChat.set(partnerId, chatId);
+        socket.emit('partner-status', { status: 'online', event: 'rejoined' });
+        partnerSock.emit('partner-status', { status: 'online', event: 'rejoined' });
+
+        socket.emit('rejoinRoom', {
           chatId,
-          partnerId: partnerSock.id,
-          userId: socket.id,
           status: 'success',
-          token: signToken(payload),
-          berries: payload.berries,
           msg: '🦊 You rejoined the chat!',
           timeEndAt: chat.timer?.endAt || 0,
         });
-        partnerSock.emit('partner-status', { status: 'online', event: 'rejoined' });
-        socket.emit('partner-status', { status: 'online', event: 'rejoined' });
+
+        socket.emit('message', {
+          type: 'system',
+          text: '🦊 You rejoined the chat!',
+          timestamp: Date.now(),
+        });
         partnerSock.emit('message', {
           type: 'system',
           text: '🦊 Your partner rejoined the chat!',
           timestamp: Date.now(),
         });
-        socket.emit('message', {
-          type: 'system',
-          text: '🦊 Your rejoined the chat!',
-          timestamp: Date.now(),
-        });
+        console.log(`🔄 Rejoined: ${chatId} | User: ${foxData.userId}`);
       }
     }
-  );
-
-  // ── exitChat ────────────────────────────────────────────────────────
-  socket.on('exitChat', () => {
-    removeFromQueue(socket.id);
-    const chatId = socketToChat.get(socket.id);
-    if (chatId) endChat(io, chatId, socket.id, 'disconnect');
-    socket.emit('idle', { msg: '🦊 You left the chat.' });
-  });
+  }
 }

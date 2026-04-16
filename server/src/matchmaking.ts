@@ -3,31 +3,30 @@ import type { QueueEntry, Chat } from './types.js';
 import {
   matchmakingQueue,
   activeChats,
-  socketToChat,
-  socketPayloads,
+  userIdToSocket,
+  userIdToChat,
+  userPayloads,
 } from './state.js';
-import {
-  COST_MATCH,
-  INITIAL_CHAT_MS,
-} from './constants.js';
+import { COST_MATCH, INITIAL_CHAT_MS } from './constants.js';
 import { clamp, generateChatId, getCooldownMs } from './utils.js';
 import { signToken } from './tokens.js';
 import { startChatTimer } from './chat.js';
 
-export function removeFromQueue(socketId: string): void {
-  const idx = matchmakingQueue.findIndex((e) => e.socketId === socketId);
+export function removeFromQueue(userId: string): void {
+  const idx = matchmakingQueue.findIndex((e) => e.payload.userId === userId);
   if (idx !== -1) matchmakingQueue.splice(idx, 1);
 }
 
-export function tryMatch(socketId: string): QueueEntry | null {
-  const idx = matchmakingQueue.findIndex((e) => e.socketId !== socketId);
+export function tryMatch(userId: string): QueueEntry | null {
+  const idx = matchmakingQueue.findIndex((e) => e.payload.userId !== userId);
   if (idx === -1) return null;
   return matchmakingQueue.splice(idx, 1)[0];
 }
 
-export function requeueSocket(io: Server, socketId: string, reason: 'disconnect' | 'skip'): void {
-  const payload = socketPayloads.get(socketId);
-  const s = io.sockets.sockets.get(socketId);
+export function requeueSocket(io: Server, userId: string, reason: 'disconnect' | 'skip'): void {
+  const payload = userPayloads.get(userId);
+  const socketId = userIdToSocket.get(userId);
+  const s = socketId ? io.sockets.sockets.get(socketId) : null;
   if (!payload || !s) return;
 
   if (
@@ -39,25 +38,26 @@ export function requeueSocket(io: Server, socketId: string, reason: 'disconnect'
     return;
   }
 
-  const partner = tryMatch(socketId);
+  const partner = tryMatch(userId);
   if (partner) {
-    const partnerPayload = socketPayloads.get(partner.socketId);
-    const partnerSocket = io.sockets.sockets.get(partner.socketId);
+    const partnerPayload = partner.payload;
+    const partnerSocketId = userIdToSocket.get(partner.payload.userId);
+    const partnerSocket = partnerSocketId ? io.sockets.sockets.get(partnerSocketId) : null;
 
     payload.berries = clamp(payload.berries - COST_MATCH);
     if (partnerPayload) partnerPayload.berries = clamp(partnerPayload.berries - COST_MATCH);
 
     const chatId = generateChatId();
     activeChats.set(chatId, {
-      users: [socketId, partner.socketId],
+      users: [userId, partner.payload.userId],
       extendVotes: new Set(),
       timer: null,
       phase: 'initial',
       timerEndedAt: null,
       startedAt: Date.now(),
     });
-    socketToChat.set(socketId, chatId);
-    socketToChat.set(partner.socketId, chatId);
+    userIdToChat.set(userId, chatId);
+    userIdToChat.set(partner.payload.userId, chatId);
     payload.activeChatId = chatId;
     payload.lastMatch = Date.now();
     if (partnerPayload) {
@@ -70,8 +70,8 @@ export function requeueSocket(io: Server, socketId: string, reason: 'disconnect'
     s.emit('matched', {
       token: signToken(payload),
       chatId,
-      partnerId: partner.socketId,
-      userId: socketId,
+      partnerId: partnerSocket?.id,
+      userId: userId,
       berries: payload.berries,
       durationMs: INITIAL_CHAT_MS,
       msg: '🦊 Found a new Sneaky Fox! Start chatting!',
@@ -83,16 +83,16 @@ export function requeueSocket(io: Server, socketId: string, reason: 'disconnect'
       partnerSocket.emit('matched', {
         token: signToken(partnerPayload),
         chatId,
-        partnerId: socketId,
-        userId: partner.socketId,
+        partnerId: s.id,
+        userId: partner.payload.userId,
         berries: partnerPayload.berries,
         durationMs: INITIAL_CHAT_MS,
         msg: '🦊 A Sneaky Fox found you! Start chatting!',
       });
     }
-    console.log(`💬 Auto-matched ${socketId} -> chat ${chatId}`);
+    console.log(`💬 Auto-matched ${userId} -> chat ${chatId}`);
   } else {
-    matchmakingQueue.push({ socketId, payload });
+    matchmakingQueue.push({ socketId: socketId || '', payload });
 
     s.emit('autoRequeue', {
       msg:
@@ -101,6 +101,6 @@ export function requeueSocket(io: Server, socketId: string, reason: 'disconnect'
           : '💨 Fox skipped — finding another one...',
     });
 
-    console.log(`🔄 Auto-requeued: ${socketId}`);
+    console.log(`🔄 Auto-requeued: ${userId}`);
   }
 }

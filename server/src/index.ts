@@ -4,13 +4,14 @@ import cors from 'cors';
 import http from 'http';
 import { Server } from 'socket.io';
 
-import { socketPayloads, lastBroadcastTime, setLastBroadcastTime } from './state.js';
-import { setupAuthMiddleware } from './middleware.js';
-import { registerEventHandlers } from './events.js';
+import { userPayloads, lastBroadcastTime, setLastBroadcastTime, userIdToSocket } from './state.js';
+import { setupAuthMiddleware, setupBlockMiddleware } from './middleware.js';
+import { registerEventHandlers, rejoinUserIfChatIDExists } from './events.js';
 import { registerGameEventHandlers } from './gameEvents.js';
-import { broadcastOnlineCount, shouldBroadcast } from './utils.js';
+import { broadcastOnlineCount, getSocketByUserId, shouldBroadcast } from './utils.js';
 import { signToken, freshPayload } from './tokens.js';
 import { BROADCAST_INTERVAL } from './constants.js';
+import { ExtendedSocket, FoxPayload } from './types.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'sneaky-fox-berry-secret-change-in-prod';
 const PORT = process.env.PORT || 3000;
@@ -31,17 +32,29 @@ const io = new Server(server, {
 // Setup CORS middleware for Express
 app.use(cors(corsConfig));
 
-// Setup auth middleware
+// Setup auth and block middleware
 setupAuthMiddleware(io);
+setupBlockMiddleware(io);
 
 // Track broadcast time
 let trackedBroadcastTime = 0;
 
 // Socket.io connection
-io.on('connection', (socket) => {
+io.on('connection', (skt) => {
+  const socket = skt as ExtendedSocket;
   const ua = socket.handshake.headers['user-agent'];
-  const foxData = (socket as any).foxData;
-  socketPayloads.set(socket.id, { ...foxData, ua });
+  const foxData = socket.foxData;
+  const oldSocketId = userIdToSocket.get(foxData.userId);
+  const oldSocket = oldSocketId ? io.sockets.sockets.get(oldSocketId) : null;
+
+  if (oldSocket) {
+    oldSocket.emit('info', { msg: 'You have been disconnected due to a new connection.' });
+    oldSocket.disconnect();
+  }
+
+  userPayloads.set(foxData.userId, { ...foxData, ua });
+  userIdToSocket.set(foxData.userId, socket.id);
+
   socket.emit('init', {
     token: signToken(foxData),
     berries: foxData.berries,
@@ -53,9 +66,9 @@ io.on('connection', (socket) => {
     trackedBroadcastTime = Date.now();
   }
 
-  console.log(`🦊 Connected: ${socket.id} | Online: ${io.sockets.sockets.size}`);
+  console.log(`🦊 Connected: ${foxData.userId} | Online: ${io.sockets.sockets.size}`);
 
-  // Register all event handlers for this socket
+  rejoinUserIfChatIDExists(io, socket);
   registerEventHandlers(io, socket);
   registerGameEventHandlers(io, socket);
 });

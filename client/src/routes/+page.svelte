@@ -73,58 +73,97 @@
         toastStore.add('🔄 Reconnected! Resuming search...');
         handleFindFox();
       }
-      if (get(roomId)) {
-        chatStore.loadSession(get(roomId) || '');
-        sock.emit(
-          'rejoinRoom',
-          { roomId: get(roomId), ouid: get(session).userId },
-          (response: any) => {
-            if (response.status == 'success') {
-              toastStore.add('🔄 Rejoined existing chat!');
-              screen = 'chat';
-              if (response.timeEndAt <= Date.now()) {
-                toastStore.add('⏰ Chat already ended. Starting fresh.');
-                localStorage.removeItem('roomId');
-                handleFindFox();
-                return;
-              }
-              chatStore.resetTimer(response.timeEndAt - Date.now());
-              console.log('Rejoin response:', response);
-              chatStore.updateSession({
-                chatId: get(roomId) || '',
-                userId: response.userId,
-                partnerId: response.partnerId,
-              });
+      // if (get(roomId)) {
+      //   chatStore.loadSession(get(roomId) || '');
+      //   sock.emit(
+      //     'rejoinRoom',
+      //     { roomId: get(roomId), ouid: get(session).userId },
+      //     (response: any) => {
+      //       if (response.status == 'success') {
+      //         toastStore.add('🔄 Rejoined existing chat!');
+      //         screen = 'chat';
+      //         if (response.timeEndAt <= Date.now()) {
+      //           toastStore.add('⏰ Chat already ended. Starting fresh.');
+      //           localStorage.removeItem('roomId');
+      //           handleFindFox();
+      //           return;
+      //         }
+      //         chatStore.resetTimer(response.timeEndAt - Date.now());
+      //         console.log('Rejoin response:', response);
+      //         chatStore.updateSession({
+      //           chatId: get(roomId) || '',
+      //           userId: response.userId,
+      //           partnerId: response.partnerId,
+      //         });
 
-              const queued = get(queuedMessages)
-                .filter((m: QueuedMessage) => m.chatId !== get(roomId))
-                .forEach((m) => {
-                  console.log('Removing queued message for old room: ' + m.text);
-                  chatStore.removeQueuedMessage(m.id);
-                });
+      //         const queued = get(queuedMessages)
+      //           .filter((m: QueuedMessage) => m.chatId !== get(roomId))
+      //           .forEach((m) => {
+      //             console.log('Removing queued message for old room: ' + m.text);
+      //             chatStore.removeQueuedMessage(m.id);
+      //           });
 
-              const searchQueued = get(messages).filter(
-                (m: ChatMessage) => m.type === 'self' && !m.timestamp
-              );
+      //         const searchQueued = get(messages).filter(
+      //           (m: ChatMessage) => m.type === 'self' && !m.timestamp
+      //         );
 
-              searchQueued.forEach((m) => {
-                chatStore.addQueuedMessage(
-                  m.text,
-                  get(roomId) || '',
-                  m.id,
-                  'self',
-                  m.replyTo || ''
-                );
-              });
-            } else {
-              toastStore.add(response.msg || 'Failed to rejoin chat. Starting fresh.');
-              localStorage.removeItem('roomId');
-              handleFindFox();
-            }
-          }
+      //         searchQueued.forEach((m) => {
+      //           chatStore.addQueuedMessage(
+      //             m.text,
+      //             get(roomId) || '',
+      //             m.id,
+      //             'self',
+      //             m.replyTo || ''
+      //           );
+      //         });
+      //       } else {
+      //         toastStore.add(response.msg || 'Failed to rejoin chat. Starting fresh.');
+      //         localStorage.removeItem('roomId');
+      //         handleFindFox();
+      //       }
+      //     }
+      //   );
+      // }
+    });
+
+    sock.on('rejoinRoom', (d: unknown) => {
+      const { status, timeEndAt, msg } = d as { status: string; timeEndAt: number; msg: string };
+      if (status === 'success') {
+        toastStore.add('🔄 Rejoined existing chat!');
+        screen = 'chat';
+        if (timeEndAt <= Date.now()) {
+          toastStore.add('⏰ Chat already ended. Starting fresh.');
+          localStorage.removeItem('roomId');
+          handleFindFox();
+          return;
+        }
+        chatStore.resetTimer(timeEndAt - Date.now());
+        console.log('Rejoin response:', d);
+        chatStore.updateSession({
+          chatId: get(roomId) || '',
+        });
+
+        const queued = get(queuedMessages)
+          .filter((m: QueuedMessage) => m.chatId !== get(roomId))
+          .forEach((m) => {
+            console.log('Removing queued message for old room: ' + m.text);
+            chatStore.removeQueuedMessage(m.id);
+          });
+
+        const searchQueued = get(messages).filter(
+          (m: ChatMessage) => m.type === 'self' && !m.timestamp
         );
+
+        searchQueued.forEach((m) => {
+          chatStore.addQueuedMessage(m.text, get(roomId) || '', m.id, 'self', m.replyTo || '');
+        });
+      } else {
+        toastStore.add(msg || 'Failed to rejoin chat. Starting fresh.');
+        localStorage.removeItem('roomId');
+        handleFindFox();
       }
     });
+
     sock.on('disconnect', () => {
       isConnected = false;
       toastStore.add('🌫️ Connection lost. Reconnecting...');
