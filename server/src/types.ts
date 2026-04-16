@@ -1,14 +1,30 @@
+import { Socket } from 'socket.io';
+
 export interface FoxPayload {
   berries: number;
   lastMatch: number | null;
   activeChatId: string | null;
   iat?: number;
   ua?: string;
+  userId: string;
 }
 
 export interface QueueEntry {
   socketId: string;
   payload: FoxPayload;
+}
+
+export interface ExtendedSocket extends Socket {
+  foxData: FoxPayload;
+}
+
+export interface Block {
+  userId: string;
+  blockedUntil: number;
+  ip: string;
+  userAgent: string;
+  reason: any;
+  message: string;
 }
 
 export interface Chat {

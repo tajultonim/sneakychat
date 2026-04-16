@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { FoxPayload } from './types.js';
 import { STARTING_BERRIES } from './constants.js';
 
@@ -37,8 +37,6 @@ export function decryptMeta(encrypted: string): unknown {
   }
 }
 
-
-
 export function signToken(payload: FoxPayload): string {
   const { iat, ...rest } = payload;
   return jwt.sign(rest, JWT_SECRET);
@@ -53,5 +51,11 @@ export function verifyToken(token: string): FoxPayload | null {
 }
 
 export function freshPayload(overrides: Partial<FoxPayload> = {}): FoxPayload {
-  return { berries: STARTING_BERRIES, lastMatch: null, activeChatId: null, ...overrides };
+  return {
+    userId: randomUUID(),
+    berries: STARTING_BERRIES,
+    lastMatch: null,
+    activeChatId: null,
+    ...overrides,
+  };
 }
