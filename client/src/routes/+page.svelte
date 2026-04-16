@@ -264,16 +264,6 @@
             if (timestamp) {
               chatStore.updateMessage(id, { timestamp, meta });
             }
-            // chatStore.updateMessage(id, {
-            //   sticker: {
-            //     id: sticker.id,
-            //     name: sticker.name,
-            //     url: sticker.url,
-            //     type: sticker.type,
-            //     fallbackText: sticker.fallbackText,
-            //   },
-            //   text: text,
-            // });
           } else {
             // New sticker message
             chatStore.addMessage(
