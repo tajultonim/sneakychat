@@ -204,10 +204,7 @@
         token,
         berries: b,
         durationMs,
-        msg,
-        partnerId,
         chatId,
-        userId,
       } = d as {
         token: string;
         berries: number;
@@ -226,8 +223,6 @@
       roomId.set((d as { chatId: string }).chatId);
       chatStore.updateSession({
         chatId,
-        userId,
-        partnerId,
         startedAt: Date.now(),
       });
     });

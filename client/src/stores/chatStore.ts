@@ -28,8 +28,6 @@ interface ChatSession {
   lastTextAt: number;
   startedAt: number;
   chatId: string;
-  userId: string;
-  partnerId: string;
 }
 
 export interface QueuedMessage {
@@ -58,8 +56,6 @@ export const session = writable<ChatSession>(
     lastTextAt: 0,
     startedAt: 0,
     chatId: '',
-    userId: '',
-    partnerId: '',
   }
 );
 export const queuedMessages = writable<QueuedMessage[]>(savedQueuedMessages);
