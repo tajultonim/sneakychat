@@ -7,7 +7,7 @@ import { Server } from 'socket.io';
 import { userPayloads, lastBroadcastTime, setLastBroadcastTime, userIdToSocket } from './state.js';
 import { setupAuthMiddleware, setupBlockMiddleware } from './middleware.js';
 import { registerEventHandlers, rejoinUserIfChatIDExists } from './events.js';
-import { registerGameEventHandlers } from './gameEvents.js';
+import { registerGameEventHandlers, rejoinGameIfExists } from './gameEvents.js';
 import { broadcastOnlineCount, getSocketByUserId, shouldBroadcast } from './utils.js';
 import { signToken, freshPayload } from './tokens.js';
 import { BROADCAST_INTERVAL } from './constants.js';
@@ -59,6 +59,7 @@ io.on('connection', (skt) => {
     token: signToken(foxData),
     berries: foxData.berries,
     activeChatId: foxData.activeChatId || null,
+    userId: foxData.userId,
   });
 
   if (trackedBroadcastTime + BROADCAST_INTERVAL < Date.now()) {
@@ -69,6 +70,7 @@ io.on('connection', (skt) => {
   console.log(`🦊 Connected: ${foxData.userId} | Online: ${io.sockets.sockets.size}`);
 
   rejoinUserIfChatIDExists(io, socket);
+  rejoinGameIfExists(io, socket);
   registerEventHandlers(io, socket);
   registerGameEventHandlers(io, socket);
 });

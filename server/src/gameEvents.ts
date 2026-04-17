@@ -141,6 +141,12 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
     if (proposerSocket) {
       proposerSocket.emit('gameStarted', gameState);
     }
+    socket.emit('info', { msg: `You accepted the game proposal for ${gameType}.` });
+    if (proposerSocket) {
+      proposerSocket.emit('info', {
+        msg: `Your partner accepted the game proposal for ${gameType}.`,
+      });
+    }
 
     console.log(`🎮 Game started: ${chatId} - ${gameType}`);
   });
@@ -208,6 +214,9 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
                 winnerSocket.emit('berriesUpdate', {
                   token: signToken(winnerPayload),
                   berries: winnerPayload.berries,
+                });
+                winnerSocket.emit('info', {
+                  msg: `🎉 You won the game! +${GAME_WIN_REWARD} berries!`,
                 });
               }
             }
@@ -316,4 +325,27 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
     removeGame(gameId);
     console.log(`⛔ Game quit: ${gameId}`);
   });
+}
+
+export function rejoinGameIfExists(io: Server, socket: Socket): void {
+  const foxData = (socket as any).foxData as FoxPayload;
+  if (!foxData?.userId) return;
+
+  const chatId = userIdToChat.get(foxData.userId);
+  if (!chatId) return;
+
+  const game = getGameByChat(chatId);
+  if (!game) return;
+
+  const gameState = {
+    gameId: game.gameId,
+    chatId: game.chatId,
+    gameType: game.gameType,
+    state: game.state,
+    isFinished: game.status === 'finished',
+    winner: game.winner,
+    message: `Rejoined ${game.gameType} in progress.`,
+  };
+
+  socket.emit('gameRejoin', gameState);
 }

@@ -83,7 +83,12 @@ export default {
           },
         },
       },
+      opacityof: {
+        from: { opacity: '0', transform: 'scale(0.95)' },
+        to: { opacity: '1', transform: 'scale(1)' },
+      },
       animation: {
+        opacityof: 'opacityof 0.5s ease-out',
         bobble: 'bobble 3s ease-in-out infinite',
         sneak: 'sneak 1.2s ease-in-out infinite alternate',
         dpulse: 'dpulse 1.2s ease-in-out infinite',
