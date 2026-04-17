@@ -1,6 +1,7 @@
 <script lang="ts">
   import { socket } from '$lib/socket';
   import { activeGame, gameNames } from '$stores/gameStore';
+  import { myuserId } from '$stores/userStore';
 
   $: myChoice = null;
   let lastGameId: string | null = null;
@@ -25,7 +26,7 @@
     }
   }
 
-  $: isPlayer1 = $activeGame?.players[0] === socket.id;
+  $: isPlayer1 = $activeGame?.players[0] === $myuserId;
 
   function handleChoice(choice: 'rock' | 'paper' | 'scissors') {
     if (!$activeGame || $activeGame.gameType !== 'rockPaperScissors') return;
@@ -54,11 +55,11 @@
   }
 
   function getResultMessage(gameState: any): string {
-    if (!gameState?.result) return '';
-    if (gameState.result.outcome === 'draw') return "🤝 It's a draw!";
-    if (gameState.result.winner === $activeGame?.players[0] && isPlayer1) return '🎉 You won!';
-
-    return '😢 You lost!';
+    const res = gameState?.result;
+    if (res?.outcome === 'draw') return "🤝 It's a draw!";
+    if (res?.winner === $myuserId) return '🎉 You won!';
+    if (res?.winner) return '😢 You lost!';
+    return 'Waiting for opponent...';
   }
 </script>
 
@@ -95,10 +96,10 @@
       <div
         class="w-full max-w-[430px] rounded-2xl border border-white/[0.12] bg-[linear-gradient(165deg,rgba(22,34,22,0.95),rgba(10,16,10,0.98))] p-5 text-center"
       >
-        <p class="text-xl font-extrabold mb-5 text-[#F8F3E6]">
-          {$activeGame.winner || ($activeGame as any)?.state?.result?.outcome
-            ? getResultMessage($activeGame.state)
-            : 'Waiting for opponent...'}
+        <p
+          class={`text-xl font-extrabold mb-5 text-[#F8F3E6] ${($activeGame as any).state?.result?.winner === $myuserId ? 'animate-bounce' : 'animate-opacityof'}`}
+        >
+          {getResultMessage(gameState)}
         </p>
         <div class="grid grid-cols-2 gap-3">
           <div class="rounded-xl border border-cyan-300/25 bg-cyan-500/10 p-4">

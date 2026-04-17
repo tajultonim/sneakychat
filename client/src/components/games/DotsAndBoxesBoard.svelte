@@ -1,6 +1,7 @@
 <script lang="ts">
   import { socket } from '$lib/socket';
   import { activeGame, gameNames } from '$stores/gameStore';
+  import { myuserId } from '$stores/userStore';
 
   let gameState: any = null;
   let boardSpan = 0;
@@ -16,7 +17,7 @@
     boardSpan = safeGridSize > 0 ? safeGridSize * 2 - 1 : 0;
   }
 
-  $: isPlayer1 = $activeGame?.players[0] === socket.id;
+  $: isPlayer1 = $activeGame?.players[0] === $myuserId;
 
   function handleLineClick(type: 'horizontal' | 'vertical', row: number, col: number) {
     if (!$activeGame || $activeGame.gameType !== 'dotsAndBoxes') return;
@@ -74,11 +75,11 @@
           >
             <p class="text-xs uppercase tracking-widest text-white/60 mb-2">You</p>
             <p class="text-3xl font-bold text-[#FFE1C7]">
-              {$activeGame.players[0] == socket.id ? '🔴' : '🟡'}
+              {$activeGame.players[0] == $myuserId ? '🔴' : '🟡'}
               {gameState.scores?.[
-                $activeGame?.players[0] == socket.id
+                $activeGame?.players[0] == $myuserId
                   ? $activeGame?.players[0]
-                  : $activeGame?.players[1] == socket.id
+                  : $activeGame?.players[1] == $myuserId
                     ? $activeGame?.players[1]
                     : null
               ] || 0}
@@ -94,10 +95,10 @@
           >
             <p class="text-xs uppercase tracking-widest text-white/60 mb-2">Them</p>
             <p class="text-3xl font-bold text-[#FFE1C7]">
-              {$activeGame.players[1] == socket.id ? '🔴' : '🟡'}{gameState.scores?.[
-                $activeGame?.players[0] == socket.id
+              {$activeGame.players[1] == $myuserId ? '🔴' : '🟡'}{gameState.scores?.[
+                $activeGame?.players[0] == $myuserId
                   ? $activeGame?.players[1]
-                  : $activeGame?.players[1] == socket.id
+                  : $activeGame?.players[1] == $myuserId
                     ? $activeGame?.players[0]
                     : null
               ] || 0}

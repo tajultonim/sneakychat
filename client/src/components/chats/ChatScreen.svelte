@@ -2,8 +2,6 @@
   import { berries } from '../../stores/gameStore.ts';
   import {
     activeGame,
-    gameProposal,
-    hasGameProposal,
     hasActiveGame,
     gameSize,
   } from '../../stores/gameStore.ts';
@@ -20,7 +18,7 @@
     timerRemaining,
   } from '../../stores/chatStore.ts';
 
-  import { partnerStatus } from '../../stores/partnerStore.ts';
+  import { partnerStatus } from '../../stores/userStore.ts';
   import { socket } from '../../lib/socket.ts';
   import GameProposal from '../games/GameProposal.svelte';
   import GameBoard from '../games/GameBoard.svelte';

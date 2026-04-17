@@ -1,6 +1,7 @@
 <script lang="ts">
   import { socket } from '$lib/socket';
   import { activeGame, gameNames } from '$stores/gameStore';
+  import { myuserId } from '$stores/userStore';
 
   let gameState: any = null;
 
@@ -8,7 +9,7 @@
     gameState = $activeGame.state;
   }
 
-  $: isPlayer1 = $activeGame?.players[0] === socket.id;
+  $: isPlayer1 = $activeGame?.players[0] === $myuserId;
 
   function handleColumnClick(col: number) {
     if (!$activeGame || $activeGame.gameType !== 'connect4') return;

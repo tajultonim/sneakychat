@@ -27,11 +27,12 @@
   import ToastManager from '$components/ToastManager.svelte';
   import ExitConfirmModal from '$components/ExitConfirmModal.svelte';
   import ChatHistoryModal from '$components/ChatHistoryModal.svelte';
-  import { partnerStatus } from '$stores/partnerStore';
+  import { partnerStatus } from '$stores/userStore';
   import { stickerStore } from '$stores/stickerStore';
   import { browser } from '$app/environment';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
+  import { myuserId } from '$stores/userStore';
 
   type Screen = 'idle' | 'searching' | 'chat';
 
@@ -174,9 +175,10 @@
     });
 
     sock.on('init', (d: unknown) => {
-      const { token, berries: b } = d as { token: string; berries: number };
+      const { token, berries: b, userId } = d as { token: string; berries: number; userId: string };
       localStorage.setItem('sneaky_token', token);
       updateBerryUI(b);
+      myuserId.set(userId);
     });
 
     sock.on('berriesUpdate', (d: unknown) => {
@@ -423,7 +425,7 @@
         gameType: string;
       };
       gameProposal.set(proposal);
-      toastStore.add(`🎮 ${proposal.gameType}: Partner wants to play!`);
+      // toastStore.add(`🎮 ${proposal.gameType}: Partner wants to play!`);
     });
 
     sock.on('gameStarted', (d: unknown) => {
@@ -446,7 +448,31 @@
         currentPlayer: players[0],
       });
       gameProposal.set(null);
-      toastStore.add('🎮 Game started!');
+      // toastStore.add('🎮 Game started!');
+    });
+
+    sock.on('gameRejoin', (d: unknown) => {
+      const { gameId, chatId, gameType, state, isFinished, winner, message } = d as {
+        gameId: string;
+        chatId: string;
+        gameType: string;
+        state: unknown;
+        isFinished: boolean;
+        winner: string | null;
+        message: string;
+      };
+
+      activeGame.set({
+        gameId,
+        chatId,
+        gameType,
+        players: [],
+        state,
+        isFinished,
+        winner,
+        currentPlayer: null,
+      });
+      // toastStore.add(message);
     });
 
     sock.on('gameStateUpdate', (d: unknown) => {
@@ -484,10 +510,10 @@
             winner,
             currentPlayer: null,
           });
-          toastStore.add(message);
-          if (winner) {
-            toastStore.add(`✨ +${reward} berries!`);
-          }
+          // // toastStore.add(message);
+          // if (winner) {
+          //   toastStore.add(`✨ +${reward} berries!`);
+          // }
 
           // Game remains open, waiting for user to restart or close
         }
