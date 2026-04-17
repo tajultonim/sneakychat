@@ -183,6 +183,10 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
         (gameObj as any).isFinished = (game.status as any) === 'finished';
         (gameObj as any).winner = game.winner;
 
+        const partnerUserId = game.players.find((id) => id !== foxData.userId);
+        const partnerSocketId = partnerUserId ? userIdToSocket.get(partnerUserId) : null;
+        const partnerSocket = partnerSocketId ? io.sockets.sockets.get(partnerSocketId) : null;
+
         // Validate and apply move
         if (!gameObj.isValidMove(foxData.userId, move).isValid) {
           return callback({
@@ -219,7 +223,16 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
                   msg: `🎉 You won the game! +${GAME_WIN_REWARD} berries!`,
                 });
               }
+              const loserSocket = game.winner === foxData.userId ? partnerSocket : socket;
+              if (loserSocket) {
+                loserSocket.emit('info', {
+                  msg: `😞 You lost the game. Better luck next time!`,
+                });
+              }
             }
+          } else {
+            socket.emit('info', { msg: `🤝 The game ended in a draw!` });
+            partnerSocket?.emit('info', { msg: `🤝 The game ended in a draw!` });
           }
 
           // Notify both players
@@ -234,10 +247,6 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
           };
 
           callback({ status: 'success', gameState });
-
-          const partnerUserId = game.players.find((id) => id !== foxData.userId);
-          const partnerSocketId = partnerUserId ? userIdToSocket.get(partnerUserId) : null;
-          const partnerSocket = partnerSocketId ? io.sockets.sockets.get(partnerSocketId) : null;
 
           socket.emit('gameEnded', gameState);
           if (partnerSocket) {
