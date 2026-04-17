@@ -77,25 +77,21 @@ export function registerEventHandlers(io: Server, socket: ExtendedSocket): void 
       socket.emit('matched', {
         token: signToken(socket.foxData),
         chatId,
-        partnerId: partnerSocket?.id,
-        userId: socket.foxData.userId,
         berries: socket.foxData.berries,
         durationMs: INITIAL_CHAT_MS,
         msg: '🦊 You found another Sneaky Fox! Start chatting!',
       });
       socket.emit('partner-status', { status: 'online' });
-      partnerSocket?.emit('partner-status', { status: 'online' });
 
       if (partnerSocket && partnerPayload) {
         partnerSocket.emit('matched', {
           token: signToken(partnerPayload),
           chatId,
-          partnerId: socket.id,
-          userId: partner.payload.userId,
           berries: partnerPayload.berries,
           durationMs: INITIAL_CHAT_MS,
           msg: '🦊 A Sneaky Fox found you! Start chatting!',
         });
+        partnerSocket?.emit('partner-status', { status: 'online' });
       }
       console.log(`💬 Chat ${chatId}: ${socket.foxData.userId} <-> ${partner.payload.userId}`);
     } else {
@@ -237,7 +233,7 @@ export function registerEventHandlers(io: Server, socket: ExtendedSocket): void 
       return socket.emit('info', { msg: 'You already voted to extend!' });
     chat.extendVotes.add(socket.foxData?.userId || '');
     const partnerId = chat.users.find((userId) => userId !== socket.foxData?.userId);
-   
+
     const partnerSock = getSocketByUserId(io, partnerId);
     if (partnerSock)
       partnerSock.emit('extendRequest', {

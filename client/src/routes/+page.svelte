@@ -22,7 +22,7 @@
   import CooldownBadge from '$components/CooldownBadge.svelte';
   import IdleScreen from '$components/IdleScreen.svelte';
   import SearchingScreen from '$components/SearchingScreen.svelte';
-  import ChatScreen from '$components/ChatScreen.svelte';
+  import ChatScreen from '$components/chats/ChatScreen.svelte';
   import SkipConfirmModal from '$components/SkipConfirmModal.svelte';
   import ToastManager from '$components/ToastManager.svelte';
   import ExitConfirmModal from '$components/ExitConfirmModal.svelte';
@@ -204,10 +204,7 @@
         token,
         berries: b,
         durationMs,
-        msg,
-        partnerId,
         chatId,
-        userId,
       } = d as {
         token: string;
         berries: number;
@@ -226,9 +223,8 @@
       roomId.set((d as { chatId: string }).chatId);
       chatStore.updateSession({
         chatId,
-        userId,
-        partnerId,
         startedAt: Date.now(),
+        messages: [],
       });
     });
 
@@ -269,16 +265,6 @@
             if (timestamp) {
               chatStore.updateMessage(id, { timestamp, meta });
             }
-            // chatStore.updateMessage(id, {
-            //   sticker: {
-            //     id: sticker.id,
-            //     name: sticker.name,
-            //     url: sticker.url,
-            //     type: sticker.type,
-            //     fallbackText: sticker.fallbackText,
-            //   },
-            //   text: text,
-            // });
           } else {
             // New sticker message
             chatStore.addMessage(

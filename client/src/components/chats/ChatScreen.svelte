@@ -1,15 +1,15 @@
 <script lang="ts">
-  import { berries } from '../stores/gameStore.ts';
+  import { berries } from '../../stores/gameStore.ts';
   import {
     activeGame,
     gameProposal,
     hasGameProposal,
     hasActiveGame,
     gameSize,
-  } from '../stores/gameStore.ts';
-  import { stickerStore } from '../stores/stickerStore.ts';
+  } from '../../stores/gameStore.ts';
+  import { stickerStore } from '../../stores/stickerStore.ts';
   import Icon from '@iconify/svelte';
-  import animatedFox from '../assets/icon/animated-fox.webp';
+  import animatedFox from '../../assets/icon/animated-fox.webp';
   import {
     messages,
     timerDisplay,
@@ -18,16 +18,17 @@
     partnerWantsExtend,
     myExtendVote,
     timerRemaining,
-  } from '../stores/chatStore.ts';
+  } from '../../stores/chatStore.ts';
 
-  import { partnerStatus } from '../stores/partnerStore.ts';
-  import { socket } from '../lib/socket.ts';
-  import GameProposal from './games/GameProposal.svelte';
-  import GameBoard from './games/GameBoard.svelte';
-  import GameMenu from './GameMenu.svelte';
-  import StickerPicker from './StickerPicker.svelte';
-  import EmojiPicker from './EmojiPicker.svelte';
+  import { partnerStatus } from '../../stores/partnerStore.ts';
+  import { socket } from '../../lib/socket.ts';
+  import GameProposal from '../games/GameProposal.svelte';
+  import GameBoard from '../games/GameBoard.svelte';
+  import GameMenu from '../GameMenu.svelte';
+  import StickerPicker from '../StickerPicker.svelte';
+  import EmojiPicker from '../EmojiPicker.svelte';
   import { onMount, tick } from 'svelte';
+  import { isEmoji } from '$lib/helper.ts';
 
   type OutgoingMessage = {
     text?: string;
@@ -444,12 +445,6 @@
     }
     previousMessageCount = currentMessageCount;
   });
-
-  function isEmoji(text: string) {
-    // Regex covers most emoji characters
-    const emojiRegex = /^\p{Extended_Pictographic}(?:\u200D\p{Extended_Pictographic})*$/u;
-    return emojiRegex.test(text);
-  }
 
   function proposeGame(gameType: string) {
     socket.emit('proposeGame', { gameType });
