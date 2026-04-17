@@ -12,6 +12,11 @@ import { broadcastOnlineCount, getSocketByUserId, shouldBroadcast } from './util
 import { signToken, freshPayload } from './tokens.js';
 import { BROADCAST_INTERVAL } from './constants.js';
 import { ExtendedSocket, FoxPayload } from './types.js';
+import { initializeDatabase } from './db.js';
+import { syncBlockedUsersFromDb } from './blocklist.js';
+import { syncAdminsFromDb } from './adminManager.js';
+import { registerAdminHandlers } from './admin.js';
+import { authenticateAdmin, verifyAdminToken } from './adminAuth.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'sneaky-fox-berry-secret-change-in-prod';
 const PORT = process.env.PORT || 3000;
@@ -32,9 +37,62 @@ const io = new Server(server, {
 // Setup CORS middleware for Express
 app.use(cors(corsConfig));
 
-// Setup auth and block middleware
+// Setup JSON body parser
+app.use(express.json());
+
+// Setup admin and block middleware
 setupAuthMiddleware(io);
 setupBlockMiddleware(io);
+
+// Setup admin handlers
+registerAdminHandlers(io);
+
+// Admin login endpoint
+app.post('/api/admin/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: 'Username and password required' });
+    }
+
+    const result = await authenticateAdmin(username, password);
+
+    if (!result) {
+      return res.status(401).json({ success: false, error: 'Invalid username or password' });
+    }
+
+    res.json({
+      success: true,
+      token: result.token,
+      adminUserId: result.adminUserId,
+      username: result.username,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Authentication failed' });
+  }
+});
+
+// Verify token endpoint
+app.post('/api/admin/verify', (req, res) => {
+  try {
+    const { token } = req.body;
+
+    if (!token) {
+      return res.status(400).json({ success: false, error: 'Token required' });
+    }
+
+    const verified = verifyAdminToken(token);
+
+    if (!verified) {
+      return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    }
+
+    res.json({ success: true, adminUserId: verified.adminUserId, username: verified.username });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Verification failed' });
+  }
+});
 
 // Track broadcast time
 let trackedBroadcastTime = 0;
@@ -75,5 +133,16 @@ io.on('connection', (skt) => {
   registerGameEventHandlers(io, socket);
 });
 
-// Start server
-server.listen(PORT, () => console.log(`🦊 SneakyChat -> http://localhost:${PORT}`));
+// Initialize database and start server
+(async () => {
+  try {
+    await initializeDatabase();
+    await syncBlockedUsersFromDb();
+    await syncAdminsFromDb();
+
+    server.listen(PORT, () => console.log(`🦊 SneakyChat -> http://localhost:${PORT}`));
+  } catch (err) {
+    console.error('❌ Failed to start server:', err);
+    process.exit(1);
+  }
+})();
