@@ -1,6 +1,6 @@
 // stores/stickerStore.ts
 import { browser } from '$app/environment';
-import { derived, get, writable } from 'svelte/store';
+import { derived, writable } from 'svelte/store';
 
 export interface Sticker {
   id: string;
@@ -172,26 +172,6 @@ export const stickerCollections = [
     premium: true,
     url: '/stickers/default/fox-wink.png',
     fallbackText: '🦊',
-  },
-  {
-    id: 'default-fox-love',
-    name: 'Fox in Love',
-    pack: 'default',
-    type: 'static' as const,
-    cost: 1,
-    premium: true,
-    url: '/stickers/default/fox-love.png',
-    fallbackText: '💕',
-  },
-  {
-    id: 'default-fox-laughing',
-    name: 'Fox Laughing',
-    pack: 'default',
-    type: 'static' as const,
-    cost: 1,
-    premium: true,
-    url: '/stickers/default/fox-laughing.png',
-    fallbackText: '😂',
   },
 ];
 
