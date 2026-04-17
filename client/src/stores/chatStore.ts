@@ -88,7 +88,9 @@ export const myExtendVote = writable<boolean>(false);
 
 messages.subscribe((msgs) => {
   if (browser) localStorage.setItem('current-messages', JSON.stringify(msgs));
-  session.update((sess) => ({ ...sess, messages: msgs, lastTextAt: Date.now() }));
+  if (get(session).chatId == get(roomId)) {
+    session.update((sess) => ({ ...sess, messages: msgs, lastTextAt: Date.now() }));
+  }
 });
 
 session.subscribe((sess) => {
@@ -144,6 +146,7 @@ export const chatStore = {
 
   updateSession(updates: Partial<ChatSession>): void {
     session.update((sess) => {
+      // console.log('Updating session with', updates, 'current session:', sess);
       const updated = { ...sess, ...updates };
       return updated;
     });
@@ -263,13 +266,24 @@ function saveSessionToLocalStorage(ses: ChatSession): void {
   const prevChatSessions = loadMessagesFromLocalStorage();
   prevChatSessions[ses.chatId] = ses;
   delete prevChatSessions['']; // Clean up any empty keys
+
+  Object.keys(prevChatSessions).forEach((key) => {
+    if (
+      !prevChatSessions[key] ||
+      !prevChatSessions[key].chatId ||
+      prevChatSessions[key].messages.filter((m) => m.type !== 'system').length === 0
+    ) {
+      delete prevChatSessions[key];
+    }
+  });
+
   localStorage.setItem('archive-messages', JSON.stringify(prevChatSessions));
 }
 
 function loadMessagesFromLocalStorage(): Record<string, ChatSession> {
   if (!browser) return {};
   const msgsJson = localStorage.getItem('archive-messages');
-  return msgsJson ? JSON.parse(msgsJson) : {};
+  return msgsJson ? JSON.parse(msgsJson) : ({} as Record<string, ChatSession>);
 }
 
 function loadQueuedMessagesFromLocalStorage(): QueuedMessage[] {

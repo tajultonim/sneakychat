@@ -17,7 +17,13 @@
   let activeChatId: string | null = null;
 
   $: if (visible) {
-    sessions = chatStore.getArchivedChatHistory();
+    sessions = chatStore.getArchivedChatHistory().filter((s) => {
+      const latestText = [...s.messages]
+        .reverse()
+        .find((m) => m.type !== 'system' && (m.text?.trim() || m.sticker));
+      return !!latestText;
+    });
+
     if (!activeChatId || !sessions.find((s) => s.chatId === activeChatId)) {
       activeChatId = sessions[0]?.chatId ?? null;
     }

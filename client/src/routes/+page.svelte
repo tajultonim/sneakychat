@@ -22,7 +22,7 @@
   import CooldownBadge from '$components/CooldownBadge.svelte';
   import IdleScreen from '$components/IdleScreen.svelte';
   import SearchingScreen from '$components/SearchingScreen.svelte';
-  import ChatScreen from '$components/ChatScreen.svelte';
+  import ChatScreen from '$components/chats/ChatScreen.svelte';
   import SkipConfirmModal from '$components/SkipConfirmModal.svelte';
   import ToastManager from '$components/ToastManager.svelte';
   import ExitConfirmModal from '$components/ExitConfirmModal.svelte';
@@ -224,6 +224,7 @@
       chatStore.updateSession({
         chatId,
         startedAt: Date.now(),
+        messages: [],
       });
     });
 
