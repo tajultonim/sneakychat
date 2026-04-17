@@ -2,8 +2,6 @@
   import { berries } from '../../stores/gameStore.ts';
   import {
     activeGame,
-    gameProposal,
-    hasGameProposal,
     hasActiveGame,
     gameSize,
   } from '../../stores/gameStore.ts';
