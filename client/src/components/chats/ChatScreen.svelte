@@ -1,10 +1,6 @@
 <script lang="ts">
   import { berries } from '../../stores/gameStore.ts';
-  import {
-    activeGame,
-    hasActiveGame,
-    gameSize,
-  } from '../../stores/gameStore.ts';
+  import { activeGame, hasActiveGame, gameSize } from '../../stores/gameStore.ts';
   import { stickerStore } from '../../stores/stickerStore.ts';
   import Icon from '@iconify/svelte';
   import animatedFox from '../../assets/icon/animated-fox.webp';
@@ -16,6 +12,7 @@
     partnerWantsExtend,
     myExtendVote,
     timerRemaining,
+    session,
   } from '../../stores/chatStore.ts';
 
   import { partnerStatus } from '../../stores/userStore.ts';
@@ -76,6 +73,12 @@
   let longPressStartX = 0;
   let longPressStartY = 0;
   let suppressNextBubbleTap = false;
+  let reportModal = $state<{
+    messageId: string;
+    reportedUserId: string;
+  } | null>(null);
+  let reportReason = $state('');
+  let isSubmittingReport = $state(false);
 
   function handleEmojiSelect(emoji: string) {
     inputText += emoji;
@@ -234,6 +237,63 @@
     replyToId = messageId;
     closeLongPressMenu();
     inputEl.focus();
+  }
+
+  function openReportModal(messageId: string, reportedUserId: string): void {
+    reportModal = { messageId, reportedUserId };
+    reportReason = '';
+    closeLongPressMenu();
+  }
+
+  function closeReportModal(): void {
+    reportModal = null;
+    reportReason = '';
+    isSubmittingReport = false;
+  }
+
+  async function submitReport(): Promise<void> {
+    if (!reportModal || !reportReason.trim() || isSubmittingReport) return;
+
+    isSubmittingReport = true;
+    try {
+      const msg = $messages.find((m) => m.id === reportModal.messageId);
+      if (!msg) return;
+
+      const conversationEncryptedMeta = $messages
+        .map((m) => m.meta)
+        .filter((meta): meta is string => !!meta);
+
+      // Get the chat ID from the active chat
+      const activeChatId = $session.chatId;
+
+      socket.emit(
+        'report:message',
+        {
+          chatId: activeChatId || 'unknown',
+          messageId: reportModal.messageId,
+          reason: reportReason,
+          encryptedMeta: msg.meta,
+          conversationEncryptedMeta,
+        },
+        (response: any) => {
+          if (response.success) {
+            closeReportModal();
+            alert('✅ Report submitted successfully');
+          } else {
+            if (response.error?.includes('already been reported')) {
+              alert('❌ This chat has already been reported');
+            } else {
+              alert(`❌ Failed to submit report: ${response.error}`);
+            }
+          }
+          isSubmittingReport = false;
+        }
+      );
+    } catch (err) {
+      console.error('Failed to submit report:', err);
+      alert('❌ Failed to submit report');
+      isSubmittingReport = false;
+    }
   }
 
   function flyPlane() {
@@ -720,6 +780,25 @@
       >
         Reply
       </button>
+      {#if longPressMenu && $messages.find((m) => m.id === longPressMenu.messageId)?.type === 'partner'}
+        <button
+          class="w-full text-left px-3.5 py-2.5 text-[.86rem] text-red-400 font-nunito hover:bg-white/[.08] transition-colors border-0 bg-transparent cursor-pointer"
+          onclick={() => {
+            const msg = $messages.find((m) => m.id === longPressMenu.messageId);
+            if (msg && msg.meta) {
+              const metaStr = msg.meta;
+              try {
+                // Try to extract user ID from meta if needed, otherwise use a default
+                openReportModal(longPressMenu.messageId, 'unknown-user');
+              } catch {
+                openReportModal(longPressMenu.messageId, 'unknown-user');
+              }
+            }
+          }}
+        >
+          Report
+        </button>
+      {/if}
     </div>
   {/if}
 
@@ -931,6 +1010,45 @@
         >
           ✓ Finish +5
         </button>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Report Modal -->
+  {#if reportModal}
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div class="bg-[rgba(21,40,21,0.95)] border border-white/[.14] rounded-2xl p-6 max-w-sm mx-4">
+        <h2 class="text-xl font-fredoka text-cream mb-4">Report Message 🚩</h2>
+
+        <div class="mb-4">
+          <label for="chat-report-reason" class="block text-sm text-cream font-semibold mb-2"
+            >Reason for reporting</label
+          >
+          <textarea
+            id="chat-report-reason"
+            bind:value={reportReason}
+            placeholder="Why are you reporting this message?"
+            class="w-full px-3 py-2 bg-[rgba(0,0,0,0.3)] border border-white/[.1] rounded-lg text-cream placeholder-gray-500 resize-none h-24 focus:outline-none focus:border-orange-500"
+            disabled={isSubmittingReport}
+          ></textarea>
+        </div>
+
+        <div class="flex gap-3">
+          <button
+            class="flex-1 py-2 px-3 bg-[rgba(255,255,255,.1)] hover:bg-[rgba(255,255,255,.15)] rounded-lg text-cream border-0 cursor-pointer font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            onclick={closeReportModal}
+            disabled={isSubmittingReport}
+          >
+            Cancel
+          </button>
+          <button
+            class="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 rounded-lg text-white border-0 cursor-pointer font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            onclick={submitReport}
+            disabled={!reportReason.trim() || isSubmittingReport}
+          >
+            {isSubmittingReport ? '⏳ Submitting...' : 'Submit Report'}
+          </button>
+        </div>
       </div>
     </div>
   {/if}

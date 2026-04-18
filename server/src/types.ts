@@ -25,6 +25,7 @@ export interface Block {
   userAgent: string;
   reason: any;
   message: string;
+  reportId?: string | null;
 }
 
 export interface Chat {

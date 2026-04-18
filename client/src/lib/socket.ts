@@ -22,7 +22,8 @@ let _socket: Socket | null = null;
 
 export function connectSocket(): Socket {
   const token = browser ? (localStorage.getItem('sneaky_token') ?? undefined) : undefined;
-  _socket = io(import.meta.env.VITE_SOCKET_URL, { auth: { token } });
+  const adminToken = browser ? (localStorage.getItem('adminToken') ?? undefined) : undefined;
+  _socket = io(import.meta.env.VITE_SERVER_URL, { auth: { token, adminToken } });
   return _socket;
 }
 
@@ -42,6 +43,10 @@ export const socket = {
   },
   disconnect: () => _socket?.disconnect(),
   emitwithtimeout(event: string, data?: unknown, callback?: (...args: unknown[]) => void): void {
+    if (typeof data === 'function') {
+      _socket?.timeout(3000).emit(event, undefined, data as (...args: unknown[]) => void);
+      return;
+    }
     _socket?.timeout(3000).emit(event, data, callback);
   },
 };
