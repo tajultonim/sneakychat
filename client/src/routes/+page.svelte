@@ -45,6 +45,18 @@
   let showExitConfirm = false;
   let showHistoryModal = false;
   let disposeHomeRuntime: (() => void) | null = null;
+  let isBlocked = false;
+  let blockReason = '';
+  let blockedUntil: number | null = null;
+  let blockIsPermanent = false;
+  let blockReportId = '';
+  let showAppealModal = false;
+  let appealReason = '';
+  let appealMessage = '';
+  let appealReportId = '';
+  let appealSubmitting = false;
+  let appealSuccess = '';
+  let appealError = '';
 
   $: {
     if (browser) {
@@ -63,13 +75,91 @@
       goto(url, { replaceState: true });
       screen = 'searching';
     }
+
+    fetchBlockStatus();
   });
+
+  function formatBlockedUntil(): string {
+    if (!blockedUntil) {
+      if (blockIsPermanent) {
+        return 'Forever';
+      }
+      return 'Unknown';
+    }
+    return new Date(blockedUntil).toLocaleString();
+  }
+
+  async function fetchBlockStatus(): Promise<void> {
+    if (!browser) return;
+    const token = localStorage.getItem('sneaky_token');
+    if (!token) return;
+
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SERVER_URL}/api/block-status`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+      if (data?.blocked) {
+        isBlocked = true;
+        blockReason = data.reason || 'Blocked';
+        blockedUntil = data.blockedUntil || null;
+        blockIsPermanent = !!data.isPermanent;
+        blockReportId = data.reportId || '';
+      } else {
+        isBlocked = false;
+        blockReportId = '';
+      }
+    } catch {
+      // Ignore block status fetch errors
+    }
+  }
+
+  async function submitAppeal(): Promise<void> {
+    if (!appealReason.trim() || appealSubmitting) return;
+    appealSubmitting = true;
+    appealError = '';
+    appealSuccess = '';
+
+    try {
+      const token = localStorage.getItem('sneaky_token');
+      const res = await fetch(`${import.meta.env.VITE_SERVER_URL}/api/appeal`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({
+          reason: appealReason,
+          message: appealMessage,
+          reportId: appealReportId || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (data?.success) {
+        appealSuccess = 'Appeal submitted. We will review it soon.';
+        appealReason = '';
+        appealMessage = '';
+        showAppealModal = false;
+      } else {
+        appealError = data?.error || 'Failed to submit appeal.';
+      }
+    } catch {
+      appealError = 'Failed to submit appeal.';
+    } finally {
+      appealSubmitting = false;
+    }
+  }
 
   function initHomeRuntime(): () => void {
     const sock = connectSocket();
 
     sock.on('connect', () => {
       isConnected = true;
+      fetchBlockStatus();
       if (screen == 'searching') {
         toastStore.add('🔄 Reconnected! Resuming search...');
         handleFindFox();
@@ -168,6 +258,20 @@
     sock.on('disconnect', () => {
       isConnected = false;
       toastStore.add('🌫️ Connection lost. Reconnecting...');
+    });
+
+    sock.on('connect_error', (err: any) => {
+      if (err?.message?.toLowerCase()?.includes('blocked')) {
+        isBlocked = true;
+        fetchBlockStatus();
+      }
+    });
+
+    sock.on('banned', (d: unknown) => {
+      const { message } = d as { message?: string };
+      isBlocked = true;
+      blockReason = message || 'Blocked';
+      fetchBlockStatus();
     });
 
     sock.on('onlineCount', (d: unknown) => {
@@ -665,6 +769,38 @@
   <StatsStrip {onlineCount} hidden={screen === 'chat'} />
   <CooldownBadge />
 
+  {#if isBlocked}
+    <div class="mb-4 rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-cream">
+      <div class="text-sm font-bold uppercase tracking-[.06em] text-red-200">Blocked</div>
+      <div class="text-sm text-red-100 mt-1">{blockReason}</div>
+      <div class="text-xs text-red-200 mt-2">
+        {#if blockIsPermanent}
+          Block duration: Permanent
+        {:else}
+          Unblocked at: {formatBlockedUntil()}
+        {/if}
+      </div>
+      {#if blockReportId}
+        <div class="text-xs text-red-200 mt-2">Related report: {blockReportId}</div>
+      {/if}
+      <button
+        class="mt-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[.06em] text-cream hover:bg-white/20"
+        on:click={() => {
+          appealReportId = blockReportId;
+          showAppealModal = true;
+        }}
+      >
+        Appeal
+      </button>
+      {#if appealSuccess}
+        <div class="text-xs text-green-200 mt-2">{appealSuccess}</div>
+      {/if}
+      {#if appealError}
+        <div class="text-xs text-red-200 mt-2">{appealError}</div>
+      {/if}
+    </div>
+  {/if}
+
   <div
     class={`bg-[rgba(255,248,240,0.035)] sm:border border-white/[.07] ${screen == 'chat' ? 'sm:rounded-[18px]' : 'rounded-[18px]'} overflow-hidden  backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,.22)]`}
   >
@@ -718,5 +854,59 @@
 />
 
 <ChatHistoryModal visible={showHistoryModal} on:close={handleCloseHistory} />
+
+{#if showAppealModal}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+    <div
+      class="w-full max-w-md rounded-2xl border border-white/20 bg-[rgba(14,28,14,.96)] p-6 shadow-[0_18px_40px_rgba(0,0,0,.45)]"
+    >
+      <div class="text-lg font-fredoka text-cream mb-4">Appeal Block</div>
+      <label class="block text-xs font-bold uppercase tracking-[.06em] text-cream">Reason</label>
+      <input
+        class="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-cream outline-none"
+        placeholder="Why should your block be lifted?"
+        bind:value={appealReason}
+        disabled={appealSubmitting}
+      />
+
+      <label class="block text-xs font-bold uppercase tracking-[.06em] text-cream mt-4">
+        Details
+      </label>
+      <textarea
+        class="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-cream outline-none h-24 resize-none"
+        placeholder="Add any context"
+        bind:value={appealMessage}
+        disabled={appealSubmitting}
+      ></textarea>
+
+      <label class="block text-xs font-bold uppercase tracking-[.06em] text-cream mt-4">
+        Report ID (optional)
+      </label>
+      <input
+        class="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-cream outline-none"
+        placeholder="Related report id"
+        bind:value={appealReportId}
+        disabled={appealSubmitting}
+      />
+
+      <div class="mt-5 flex gap-2">
+        <button
+          class="flex-1 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-bold text-cream"
+          on:click={() => (showAppealModal = false)}
+          disabled={appealSubmitting}
+        >
+          Cancel
+        </button>
+        <button
+          class="flex-1 rounded-xl bg-red-500 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+          on:click={submitAppeal}
+          disabled={!appealReason.trim() || appealSubmitting}
+        >
+          {appealSubmitting ? 'Submitting...' : 'Submit Appeal'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <ToastManager />

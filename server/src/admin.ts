@@ -1,13 +1,22 @@
 import { Server } from 'socket.io';
 import { blockUser, unblockUser } from './blocklist.js';
 import { blockedUser } from './state.js';
-import { isAdmin, isSuperAdmin, addAdmin, removeAdmin, updateAdminRole, getAllAdmins } from './adminManager.js';
+import {
+  isAdmin,
+  isSuperAdmin,
+  addAdmin,
+  removeAdmin,
+  updateAdminRole,
+  getAllAdmins,
+} from './adminManager.js';
 import { verifyAdminToken } from './adminAuth.js';
+import { getAllReports, getPendingReports, updateReportStatus } from './reports.js';
+import { getAllAppeals, updateAppealStatus } from './appeals.js';
 import type { Block } from './types.js';
 
 function checkAdminToken(socket: any): { valid: boolean; adminUserId?: string } {
   const token = socket.handshake.auth.adminToken;
-  
+
   if (!token) {
     return { valid: false };
   }
@@ -30,6 +39,7 @@ function getBlockedUsersList(): any[] {
       blockedUntil: block.blockedUntil,
       timeRemaining: timeRemaining > 0 ? timeRemaining : 0,
       isPermanent: block.blockedUntil === Number.MAX_SAFE_INTEGER,
+      reportId: block.reportId || null,
     });
   });
   return blocked.sort((a, b) => b.blockedUntil - a.blockedUntil);
@@ -63,7 +73,7 @@ export function registerAdminHandlers(io: Server): void {
       }
 
       try {
-        const { userId, reason, durationHours = 0, ip } = data;
+        const { userId, reason, durationHours = 0, ip, reportId } = data;
 
         if (!userId) {
           callback?.({ success: false, error: 'User ID is required' });
@@ -76,7 +86,8 @@ export function registerAdminHandlers(io: Server): void {
           reason || 'User blocked by admin',
           duration,
           authCheck.adminUserId,
-          ip
+          ip,
+          reportId
         );
 
         console.log(`👮 Admin ${authCheck.adminUserId} blocked user ${userId}`);
@@ -248,6 +259,105 @@ export function registerAdminHandlers(io: Server): void {
         // Broadcast admin list update
         const admins = getAllAdmins();
         io.emit('admin:adminsUpdated', { data: admins });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Get all reports
+    socket.on('admin:getReports', async (callback?: (data: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ error: 'Not authorized' });
+        return;
+      }
+
+      try {
+        const reports = await getAllReports();
+        callback?.({ data: reports });
+      } catch (err: any) {
+        callback?.({ error: err.message || 'Failed to get reports' });
+      }
+    });
+
+    // Update report status
+    socket.on('admin:updateReportStatus', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      try {
+        const { reportId, status } = data;
+
+        if (!reportId || !status) {
+          callback?.({ success: false, error: 'Report ID and status required' });
+          return;
+        }
+
+        if (!['pending', 'reviewed', 'dismissed', 'actioned'].includes(status)) {
+          callback?.({ success: false, error: 'Invalid status' });
+          return;
+        }
+
+        await updateReportStatus(reportId, status, authCheck.adminUserId);
+
+        console.log(`👮 Admin ${authCheck.adminUserId} updated report ${reportId} to ${status}`);
+        callback?.({ success: true, message: `Report marked as ${status}` });
+
+        // Broadcast update to all admins
+        const reports = await getAllReports();
+        io.emit('admin:reportsUpdated', { data: reports });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Get all appeals
+    socket.on('admin:getAppeals', async (callback?: (data: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ error: 'Not authorized' });
+        return;
+      }
+
+      try {
+        const appeals = await getAllAppeals();
+        callback?.({ data: appeals });
+      } catch (err: any) {
+        callback?.({ error: err.message || 'Failed to get appeals' });
+      }
+    });
+
+    // Update appeal status
+    socket.on('admin:updateAppealStatus', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      try {
+        const { appealId, status } = data;
+
+        if (!appealId || !status) {
+          callback?.({ success: false, error: 'Appeal ID and status required' });
+          return;
+        }
+
+        if (!['pending', 'approved', 'rejected'].includes(status)) {
+          callback?.({ success: false, error: 'Invalid status' });
+          return;
+        }
+
+        await updateAppealStatus(appealId, status, authCheck.adminUserId);
+
+        console.log(`👮 Admin ${authCheck.adminUserId} updated appeal ${appealId} to ${status}`);
+        callback?.({ success: true, message: `Appeal marked as ${status}` });
+
+        const appeals = await getAllAppeals();
+        io.emit('admin:appealsUpdated', { data: appeals });
       } catch (err: any) {
         callback?.({ success: false, error: err.message });
       }

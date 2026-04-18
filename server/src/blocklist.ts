@@ -10,6 +10,7 @@ export interface BlockedUserRecord {
   created_by: string;
   is_permanent: boolean;
   ip_address: string;
+  report_id?: string | null;
 }
 
 /**
@@ -37,6 +38,7 @@ export async function syncBlockedUsersFromDb(): Promise<void> {
         userAgent: '',
         reason: record.reason,
         message: record.reason || 'User blocked',
+        reportId: record.report_id || null,
       };
 
       blockedUser.set(record.user_id, block);
@@ -62,7 +64,8 @@ export async function blockUser(
   reason?: string,
   duration?: number,
   createdBy?: string,
-  ipAddress?: string
+  ipAddress?: string,
+  reportId?: string
 ): Promise<void> {
   try {
     const pool = await getPool();
@@ -78,15 +81,15 @@ export async function blockUser(
       .input('created_by', createdBy || null)
       .input('is_permanent', isPermanent ? 1 : 0)
       .input('ip_address', ipAddress || null)
-      .query(`
+      .input('report_id', reportId || null).query(`
         MERGE INTO blocked_users AS target
         USING (SELECT @user_id AS user_id) AS source
         ON target.user_id = source.user_id
         WHEN MATCHED THEN
-          UPDATE SET suspended_until = @suspended_until, reason = @reason
+          UPDATE SET suspended_until = @suspended_until, reason = @reason, report_id = @report_id
         WHEN NOT MATCHED THEN
-          INSERT (user_id, reason, suspended_until, created_at, created_by, is_permanent, ip_address)
-          VALUES (@user_id, @reason, @suspended_until, @created_at, @created_by, @is_permanent, @ip_address);
+          INSERT (user_id, reason, suspended_until, created_at, created_by, is_permanent, ip_address, report_id)
+          VALUES (@user_id, @reason, @suspended_until, @created_at, @created_by, @is_permanent, @ip_address, @report_id);
       `);
 
     // Update in-memory state
@@ -97,6 +100,7 @@ export async function blockUser(
       userAgent: '',
       reason: reason || null,
       message: reason || 'User blocked',
+      reportId: reportId || null,
     };
 
     blockedUser.set(userId, block);
@@ -106,7 +110,9 @@ export async function blockUser(
       blockedIPs.set(ipAddress, userId);
     }
 
-    console.log(`⛔ Blocked user ${userId}${isPermanent ? ' (permanent)' : ` until ${new Date(suspendedUntil)}`}`);
+    console.log(
+      `⛔ Blocked user ${userId}${isPermanent ? ' (permanent)' : ` until ${new Date(suspendedUntil)}`}`
+    );
   } catch (err) {
     console.error('❌ Failed to block user:', err);
     throw err;
@@ -149,7 +155,7 @@ export function isUserBlocked(userId: string): boolean {
   // Check if temporary block has expired
   if (block.blockedUntil < Number.MAX_SAFE_INTEGER && block.blockedUntil < Date.now()) {
     // Block has expired, remove it
-    unblockUser(userId).catch(err => console.error('Failed to remove expired block:', err));
+    unblockUser(userId).catch((err) => console.error('Failed to remove expired block:', err));
     return false;
   }
 

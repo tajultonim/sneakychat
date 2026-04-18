@@ -31,9 +31,14 @@ export async function initializeDatabase(): Promise<void> {
           created_at BIGINT NOT NULL,
           created_by NVARCHAR(255),
           is_permanent BIT NOT NULL DEFAULT 0,
-          ip_address NVARCHAR(45)
+          ip_address NVARCHAR(45),
+          report_id NVARCHAR(255)
         )
       END
+    `);
+    await pool.request().query(`
+      IF COL_LENGTH('blocked_users', 'report_id') IS NULL
+        ALTER TABLE blocked_users ADD report_id NVARCHAR(255)
     `);
     console.log('📦 blocked_users table ready');
 
@@ -69,6 +74,54 @@ export async function initializeDatabase(): Promise<void> {
       END
     `);
     console.log('📦 admin_credentials table ready');
+
+    // Create reports table
+    await pool.request().query(`
+      IF NOT EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'reports')
+      BEGIN
+        CREATE TABLE reports (
+          id INT PRIMARY KEY IDENTITY(1,1),
+          report_id NVARCHAR(255) NOT NULL UNIQUE,
+          reporter_id NVARCHAR(255) NOT NULL,
+          reported_user_id NVARCHAR(255) NOT NULL,
+          chat_id NVARCHAR(255) NOT NULL,
+          message_id NVARCHAR(255) NOT NULL,
+          message_text NVARCHAR(MAX),
+          reason NVARCHAR(500) NOT NULL,
+          message_meta NVARCHAR(MAX),
+          conversation_context NVARCHAR(MAX),
+          reported_at BIGINT NOT NULL,
+          reviewed_at BIGINT,
+          status NVARCHAR(50) NOT NULL DEFAULT 'pending',
+          reviewed_by NVARCHAR(255)
+        )
+      END
+    `);
+    console.log('📦 reports table ready');
+
+    // Create appeals table
+    await pool.request().query(`
+      IF NOT EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'appeals')
+      BEGIN
+        CREATE TABLE appeals (
+          id INT PRIMARY KEY IDENTITY(1,1),
+          appeal_id NVARCHAR(255) NOT NULL UNIQUE,
+          user_id NVARCHAR(255) NOT NULL,
+          report_id NVARCHAR(255),
+          reason NVARCHAR(500) NOT NULL,
+          message NVARCHAR(MAX),
+          created_at BIGINT NOT NULL,
+          status NVARCHAR(50) NOT NULL DEFAULT 'pending',
+          reviewed_by NVARCHAR(255),
+          reviewed_at BIGINT
+        )
+      END
+    `);
+    await pool.request().query(`
+      IF COL_LENGTH('appeals', 'report_id') IS NULL
+        ALTER TABLE appeals ADD report_id NVARCHAR(255)
+    `);
+    console.log('📦 appeals table ready');
   } catch (err) {
     console.error('❌ Database connection failed:', err);
     throw err;

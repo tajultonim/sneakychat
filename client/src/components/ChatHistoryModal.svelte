@@ -1,6 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
   import { chatStore, type ChatMessage } from '$stores/chatStore';
+  import { socket } from '$lib/socket';
 
   export let visible = false;
 
@@ -15,6 +16,9 @@
 
   let sessions: HistorySession[] = [];
   let activeChatId: string | null = null;
+  let reportModal: { messageId: string; chatId: string } | null = null;
+  let reportReason = '';
+  let isSubmittingReport = false;
 
   $: if (visible) {
     sessions = chatStore.getArchivedChatHistory().filter((s) => {
@@ -100,6 +104,62 @@
     if (!latestText) return 'No messages';
     if (latestText.sticker) return `Sticker: ${latestText.sticker.name}`;
     return latestText.text;
+  }
+
+  function openReportModal(messageId: string, chatId: string): void {
+    reportModal = { messageId, chatId };
+    reportReason = '';
+  }
+
+  function closeReportModal(): void {
+    reportModal = null;
+    reportReason = '';
+    isSubmittingReport = false;
+  }
+
+  async function submitReport(): Promise<void> {
+    if (!reportModal || !reportReason.trim() || isSubmittingReport) return;
+
+    isSubmittingReport = true;
+    try {
+      const session = sessions.find((s) => s.chatId === reportModal.chatId);
+      const msg = session?.messages.find((m) => m.id === reportModal.messageId);
+      const conversationEncryptedMeta = (session?.messages || [])
+        .map((m) => m.meta)
+        .filter((meta): meta is string => !!meta);
+
+      if (!msg) return;
+
+      socket.emit(
+        'report:message',
+        {
+          chatId: reportModal.chatId,
+          messageId: reportModal.messageId,
+          messageText: msg.text || '',
+          reason: reportReason,
+          encryptedMeta: msg.meta,
+          conversationEncryptedMeta,
+          reportedUserId: 'unknown-user',
+        },
+        (response: any) => {
+          if (response.success) {
+            closeReportModal();
+            alert('✅ Report submitted successfully');
+          } else {
+            if (response.error?.includes('already been reported')) {
+              alert('❌ This chat has already been reported');
+            } else {
+              alert(`❌ Failed to submit report: ${response.error}`);
+            }
+          }
+          isSubmittingReport = false;
+        }
+      );
+    } catch (err) {
+      console.error('Failed to submit report:', err);
+      alert('❌ Failed to submit report');
+      isSubmittingReport = false;
+    }
   }
 </script>
 
@@ -225,7 +285,7 @@
                   <span class="whitespace-pre-wrap">{msg.text}</span>
                 {/if}
 
-                {#if msg.timestamp || msg.reaction}
+                {#if msg.timestamp || msg.reaction || msg.type === 'partner'}
                   <div
                     class={` flex items-center gap-2 text-[.72rem] whitespace-nowrap ${msg.type === 'self' ? 'flex-row-reverse' : 'justify-start'}`}
                   >
@@ -237,12 +297,57 @@
                         {msg.reaction}
                       </span>
                     {/if}
+                    {#if msg.type === 'partner'}
+                      <button
+                        class="text-red-400 hover:text-red-300 opacity-0 group-hover:opacity-70 transition-opacity cursor-pointer bg-none border-none p-0"
+                        on:click={() => openReportModal(msg.id, activeSession.chatId)}
+                        title="Report this message"
+                      >
+                        🚩
+                      </button>
+                    {/if}
                   </div>
                 {/if}
               </div>
             {/each}
           {/if}
         </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Report Modal -->
+{#if reportModal}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+    <div class="bg-[rgba(21,40,21,0.95)] border border-white/[.14] rounded-2xl p-6 max-w-sm w-full">
+      <h2 class="text-xl font-fredoka text-cream mb-4">Report Message 🚩</h2>
+
+      <div class="mb-4">
+        <label class="block text-sm text-cream font-semibold mb-2">Reason for reporting</label>
+        <textarea
+          bind:value={reportReason}
+          placeholder="Why are you reporting this message?"
+          class="w-full px-3 py-2 bg-[rgba(0,0,0,0.3)] border border-white/[.1] rounded-lg text-cream placeholder-gray-500 resize-none h-24 focus:outline-none focus:border-orange-500"
+          disabled={isSubmittingReport}
+        ></textarea>
+      </div>
+
+      <div class="flex gap-3">
+        <button
+          class="flex-1 py-2 px-3 bg-[rgba(255,255,255,.1)] hover:bg-[rgba(255,255,255,.15)] rounded-lg text-cream border-0 cursor-pointer font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          on:click={closeReportModal}
+          disabled={isSubmittingReport}
+        >
+          Cancel
+        </button>
+        <button
+          class="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 rounded-lg text-white border-0 cursor-pointer font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          on:click={submitReport}
+          disabled={!reportReason.trim() || isSubmittingReport}
+        >
+          {isSubmittingReport ? '⏳ Submitting...' : 'Submit Report'}
+        </button>
       </div>
     </div>
   </div>

@@ -4,12 +4,20 @@ import cors from 'cors';
 import http from 'http';
 import { Server } from 'socket.io';
 
-import { userPayloads, lastBroadcastTime, setLastBroadcastTime, userIdToSocket } from './state.js';
+import {
+  userPayloads,
+  lastBroadcastTime,
+  setLastBroadcastTime,
+  userIdToSocket,
+  blockedUser,
+  blockedIPs,
+} from './state.js';
 import { setupAuthMiddleware, setupBlockMiddleware } from './middleware.js';
 import { registerEventHandlers, rejoinUserIfChatIDExists } from './events.js';
 import { registerGameEventHandlers, rejoinGameIfExists } from './gameEvents.js';
+import { registerReportHandlers } from './reportEvents.js';
 import { broadcastOnlineCount, getSocketByUserId, shouldBroadcast } from './utils.js';
-import { signToken, freshPayload } from './tokens.js';
+import { signToken, freshPayload, verifyToken } from './tokens.js';
 import { BROADCAST_INTERVAL } from './constants.js';
 import { ExtendedSocket, FoxPayload } from './types.js';
 import { initializeDatabase } from './db.js';
@@ -17,6 +25,7 @@ import { syncBlockedUsersFromDb } from './blocklist.js';
 import { syncAdminsFromDb } from './adminManager.js';
 import { registerAdminHandlers } from './admin.js';
 import { authenticateAdmin, verifyAdminToken } from './adminAuth.js';
+import { submitAppeal } from './appeals.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'sneaky-fox-berry-secret-change-in-prod';
 const PORT = process.env.PORT || 3000;
@@ -94,6 +103,64 @@ app.post('/api/admin/verify', (req, res) => {
   }
 });
 
+// Check block status for current user
+app.get('/api/block-status', (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const payload = token ? verifyToken(token) : null;
+    const ip = req.ip;
+
+    const blockedUserId = payload?.userId || blockedIPs.get(ip||"") || '';
+    const block = blockedUserId ? blockedUser.get(blockedUserId) : null;
+
+    if (!block) {
+      return res.json({ blocked: false });
+    }
+
+    const isPermanent = block.blockedUntil === Number.MAX_SAFE_INTEGER;
+    res.json({
+      blocked: true,
+      userId: block.userId,
+      reason: block.reason || 'Blocked',
+      blockedUntil: block.blockedUntil,
+      reportId: block.reportId || null,
+      isPermanent,
+    });
+  } catch (err: any) {
+    res.status(500).json({ blocked: false, error: 'Failed to check block status' });
+  }
+});
+
+// Submit an appeal
+app.post('/api/appeal', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const payload = token ? verifyToken(token) : null;
+
+    if (!payload) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const { reason, message, reportId } = req.body || {};
+    if (!reason) {
+      return res.status(400).json({ success: false, error: 'Reason is required' });
+    }
+
+    const appealId = await submitAppeal({
+      userId: payload.userId,
+      reportId,
+      reason,
+      message,
+    });
+
+    res.json({ success: true, appealId });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to submit appeal' });
+  }
+});
+
 // Track broadcast time
 let trackedBroadcastTime = 0;
 
@@ -131,6 +198,7 @@ io.on('connection', (skt) => {
   rejoinGameIfExists(io, socket);
   registerEventHandlers(io, socket);
   registerGameEventHandlers(io, socket);
+  registerReportHandlers(io, socket);
 });
 
 // Initialize database and start server
