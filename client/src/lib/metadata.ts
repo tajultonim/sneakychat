@@ -1,3 +1,5 @@
+import { title } from "process";
+
 export type PageMetadata = {
   title: string;
   description: string;
@@ -25,6 +27,17 @@ export const pageMetadata: Record<string, PageMetadata> = {
       "Anonymous random chat with strangers. No accounts, no history, just genuine conversations.",
     keywords:
       "anonymous chat, random chat, stranger chat, anonymous messaging, chat with strangers",
+  },
+  admin: {
+    title: "Admin Panel - SneakyChat",
+    description: "Manage the SneakyChat platform as an administrator.",
+    ogTitle: "Admin Panel - SneakyChat",
+    ogDescription: "Access the admin panel to manage the SneakyChat platform.",
+    ogUrl: "https://sneakychat.app/admin",
+    canonicalUrl: "https://sneakychat.app/admin",
+    twitterTitle: "Admin Panel - SneakyChat",
+    twitterDescription: "Manage the SneakyChat platform as an administrator.",
+    keywords: "admin panel, sneakychat, chat platform",
   },
   about: {
     title: "About SneakyChat - Anonymous Chat Platform",

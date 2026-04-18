@@ -1,7 +1,7 @@
 import { Server } from 'socket.io';
 import type { Chat } from './types.js';
 import { Timer } from './types.js';
-import { activeChats, socketToChat, socketPayloads } from './state.js';
+import { activeChats, userIdToSocket, userIdToChat, userPayloads } from './state.js';
 import {
   REWARD_TIMER_END,
   REWARD_EXTEND_BONUS,
@@ -26,9 +26,10 @@ export function onTimerEnd(io: Server, chatId: string): void {
   chat.timerEndedAt = Date.now();
   chat.extendVotes.clear();
 
-  chat.users.forEach((uid) => {
-    const p = socketPayloads.get(uid);
-    const s = io.sockets.sockets.get(uid);
+  chat.users.forEach((userId) => {
+    const p = userPayloads.get(userId);
+    const socketId = userIdToSocket.get(userId);
+    const s = socketId ? io.sockets.sockets.get(socketId) : null;
     if (!p) return;
     p.berries = clamp(p.berries + REWARD_TIMER_END);
     const t = signToken(p);
@@ -47,7 +48,7 @@ export function endChat(
   io: Server,
   chatId: string,
   initiatorId: string,
-  reason: 'complete' | 'skip' | 'disconnect',
+  reason: 'complete' | 'skip' | 'disconnect'
 ): void {
   const chat = activeChats.get(chatId);
   if (!chat) return;
@@ -56,10 +57,11 @@ export function endChat(
     chat.timer = null;
   }
 
-  chat.users.forEach((uid) => {
-    const p = socketPayloads.get(uid);
-    const s = io.sockets.sockets.get(uid);
-    socketToChat.delete(uid);
+  chat.users.forEach((userId) => {
+    const p = userPayloads.get(userId);
+    const socketId = userIdToSocket.get(userId);
+    const s = socketId ? io.sockets.sockets.get(socketId) : null;
+    userIdToChat.delete(userId);
     if (!p) return;
     p.activeChatId = null;
 
@@ -75,7 +77,7 @@ export function endChat(
         });
     } else if (reason === 'skip') {
       const t = signToken(p);
-      if (uid !== initiatorId) {
+      if (userId !== initiatorId) {
         s?.emit('idle', {
           token: t,
           berries: p.berries,
@@ -93,14 +95,14 @@ export function endChat(
 
       if (s) s.emit('berriesUpdate', { token: t, berries: p.berries });
       setImmediate(() => {
-        requeueSocket(io, uid, 'skip');
+        requeueSocket(io, userId, 'skip');
       });
     } else {
-      if (uid !== initiatorId) {
+      if (userId !== initiatorId) {
         const t = signToken(p);
         if (s) s.emit('berriesUpdate', { token: t, berries: p.berries });
         setImmediate(() => {
-          requeueSocket(io, uid, 'disconnect');
+          requeueSocket(io, userId, 'disconnect');
         });
       }
     }

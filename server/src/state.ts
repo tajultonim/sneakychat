@@ -1,12 +1,19 @@
-import type { QueueEntry, Chat, FoxPayload, GameInstance, GameType } from './types.js';
+import type { QueueEntry, Chat, FoxPayload, GameInstance, GameType, Block } from './types.js';
 import { GameFactory } from './games/GameFactory.js';
 
 export const matchmakingQueue: QueueEntry[] = [];
 export const activeChats = new Map<string, Chat>();
-export const socketToChat = new Map<string, string>();
-export const socketPayloads = new Map<string, FoxPayload>();
+export const userIdToSocket = new Map<string, string>();
+export const userIdToChat = new Map<string, string>();
+
+export const userPayloads = new Map<string, FoxPayload>();
 export const activeGames = new Map<string, GameInstance>();
 export const chatToGame = new Map<string, string>();
+
+/// Blocked users and IPs
+export const blockedUser = new Map<string, Block>();
+export const blockedIPs = new Map<string, string>();
+export const blockedIds = new Map<string, string>();
 
 export let lastBroadcastTime = 0;
 

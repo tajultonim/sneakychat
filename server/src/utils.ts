@@ -1,6 +1,6 @@
-import { Server } from 'socket.io';
+import { Server, Socket } from 'socket.io';
 import { MAX_BERRIES, BROADCAST_INTERVAL } from './constants.js';
-import { setLastBroadcastTime } from './state.js';
+import { setLastBroadcastTime, userIdToSocket } from './state.js';
 
 export function clamp(n: number): number {
   return Math.min(MAX_BERRIES, Math.max(0, n));
@@ -27,4 +27,11 @@ export function broadcastOnlineCount(io: Server): void {
 
 export function shouldBroadcast(lastBroadcastTime: number): boolean {
   return lastBroadcastTime + BROADCAST_INTERVAL < Date.now();
+}
+
+export function getSocketByUserId(io: Server, userId?: string): Socket | null {
+  if (!userId) return null;
+  const socketId = userIdToSocket.get(userId);
+  if (!socketId) return null;
+  return io.sockets.sockets.get(socketId) || null;
 }

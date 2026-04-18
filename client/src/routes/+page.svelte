@@ -15,6 +15,7 @@
   import { roomId } from '$stores/roomStore';
   import { gameProposal, activeGame } from '$stores/gameStore';
   import { get } from 'svelte/store';
+  import { renderMarkdown } from '$lib/markdown';
 
   import Fireflies from '$components/Fireflies.svelte';
   import Header from '$components/Header.svelte';
@@ -22,16 +23,17 @@
   import CooldownBadge from '$components/CooldownBadge.svelte';
   import IdleScreen from '$components/IdleScreen.svelte';
   import SearchingScreen from '$components/SearchingScreen.svelte';
-  import ChatScreen from '$components/ChatScreen.svelte';
+  import ChatScreen from '$components/chats/ChatScreen.svelte';
   import SkipConfirmModal from '$components/SkipConfirmModal.svelte';
   import ToastManager from '$components/ToastManager.svelte';
   import ExitConfirmModal from '$components/ExitConfirmModal.svelte';
   import ChatHistoryModal from '$components/ChatHistoryModal.svelte';
-  import { partnerStatus } from '$stores/partnerStore';
+  import { partnerStatus } from '$stores/userStore';
   import { stickerStore } from '$stores/stickerStore';
   import { browser } from '$app/environment';
   import { page } from '$app/state';
   import { goto } from '$app/navigation';
+  import { myuserId } from '$stores/userStore';
 
   type Screen = 'idle' | 'searching' | 'chat';
 
@@ -44,6 +46,24 @@
   let showExitConfirm = false;
   let showHistoryModal = false;
   let disposeHomeRuntime: (() => void) | null = null;
+  let isBlocked = false;
+  let blockReason = '';
+  let blockedUntil: number | null = null;
+  let blockIsPermanent = false;
+  let blockReportId = '';
+  let showAppealModal = false;
+  let appealId = '';
+  let appealReason = '';
+  let appealMessage = '';
+  let appealReportId = '';
+  let appealStatus = '';
+  let appealSubmitting = false;
+  let appealSuccess = '';
+  let appealError = '';
+  let noticeMarkdown = '';
+  let noticeCreatedAt: number | null = null;
+  let noticeExpiresAt: number | null = null;
+  let showNotice = true;
 
   $: {
     if (browser) {
@@ -62,72 +82,292 @@
       goto(url, { replaceState: true });
       screen = 'searching';
     }
+
+    fetchBlockStatus();
+    fetchNotice();
   });
+
+  function formatBlockedUntil(): string {
+    if (!blockedUntil) {
+      if (blockIsPermanent) {
+        return 'Forever';
+      }
+      return 'Unknown';
+    }
+    return new Date(parseInt(blockedUntil.toString())).toLocaleString();
+  }
+
+  async function fetchBlockStatus(): Promise<void> {
+    if (!browser) return;
+    const token = localStorage.getItem('sneaky_token');
+    if (!token) return;
+
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SERVER_URL}/api/block-status`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await res.json();
+      if (data?.blocked) {
+        isBlocked = true;
+        blockReason = data.reason || 'Blocked';
+        blockedUntil = data.blockedUntil || null;
+        blockIsPermanent = !!data.isPermanent;
+        blockReportId = data.reportId || '';
+        if (blockReportId && !showAppealModal) {
+          fetchExistingAppeal(blockReportId);
+        }
+      } else {
+        isBlocked = false;
+        blockReportId = '';
+      }
+    } catch {
+      // Ignore block status fetch errors
+    }
+  }
+
+  async function submitAppeal(): Promise<void> {
+    if (!appealReason.trim() || appealSubmitting) return;
+    appealSubmitting = true;
+    appealError = '';
+    appealSuccess = '';
+
+    try {
+      const token = localStorage.getItem('sneaky_token');
+      const res = await fetch(`${import.meta.env.VITE_SERVER_URL}/api/appeal`, {
+        method: appealId ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({
+          appealId: appealId || undefined,
+          reason: appealReason,
+          message: appealMessage,
+          reportId: appealReportId || null,
+        }),
+      });
+
+      const data = await res.json();
+      if (data?.success) {
+        appealSuccess = appealId
+          ? 'Appeal updated. We will review it soon.'
+          : 'Appeal submitted. We will review it soon.';
+        appealReason = '';
+        appealMessage = '';
+        showAppealModal = false;
+        appealId = '';
+        appealStatus = '';
+      } else {
+        appealError = data?.error || 'Failed to submit appeal.';
+      }
+    } catch {
+      appealError = 'Failed to submit appeal.';
+    } finally {
+      appealSubmitting = false;
+    }
+  }
+
+  async function fetchExistingAppeal(reportId: string): Promise<void> {
+    if (!browser || !reportId) return;
+    try {
+      const token = localStorage.getItem('sneaky_token');
+      const res = await fetch(
+        `${import.meta.env.VITE_SERVER_URL}/api/appeal?reportId=${encodeURIComponent(reportId)}`,
+        {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : '',
+          },
+        }
+      );
+      const data = await res.json();
+      if (data?.success && data.appeal) {
+        appealId = data.appeal.appeal_id || '';
+        appealReason = data.appeal.reason || '';
+        appealMessage = data.appeal.message || '';
+        appealStatus = data.appeal.status || '';
+      } else {
+        appealId = '';
+        appealStatus = '';
+      }
+    } catch {
+      appealId = '';
+      appealStatus = '';
+    }
+  }
+
+  async function fetchNotice(): Promise<void> {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SERVER_URL}/api/notice`);
+      const data = await res.json();
+      if (data?.success && data.notice?.content) {
+        noticeMarkdown = data.notice.content;
+        noticeCreatedAt = data.notice.created_at || null;
+        noticeExpiresAt = data.notice.expires_at || null;
+        showNotice = true;
+      } else {
+        noticeMarkdown = '';
+        noticeCreatedAt = null;
+        noticeExpiresAt = null;
+      }
+    } catch {
+      // Ignore notice fetch errors
+    }
+  }
+
+  function openAppealModal(): void {
+    appealReportId = blockReportId;
+    appealError = '';
+    appealSuccess = '';
+    appealId = '';
+    appealReason = '';
+    appealMessage = '';
+    appealStatus = '';
+    showAppealModal = true;
+    if (blockReportId) {
+      fetchExistingAppeal(blockReportId);
+    }
+  }
 
   function initHomeRuntime(): () => void {
     const sock = connectSocket();
 
     sock.on('connect', () => {
       isConnected = true;
+      fetchBlockStatus();
+      fetchNotice();
       if (screen == 'searching') {
         toastStore.add('🔄 Reconnected! Resuming search...');
         handleFindFox();
       }
-      if (get(roomId)) {
-        chatStore.loadSession(get(roomId) || '');
-        sock.emit(
-          'rejoinRoom',
-          { roomId: get(roomId), ouid: get(session).userId },
-          (response: any) => {
-            if (response.status == 'success') {
-              toastStore.add('🔄 Rejoined existing chat!');
-              screen = 'chat';
-              if (response.timeEndAt <= Date.now()) {
-                toastStore.add('⏰ Chat already ended. Starting fresh.');
-                localStorage.removeItem('roomId');
-                handleFindFox();
-                return;
-              }
-              chatStore.resetTimer(response.timeEndAt - Date.now());
-              console.log('Rejoin response:', response);
-              chatStore.updateSession({
-                chatId: get(roomId) || '',
-                userId: response.userId,
-                partnerId: response.partnerId,
-              });
+      // if (get(roomId)) {
+      //   chatStore.loadSession(get(roomId) || '');
+      //   sock.emit(
+      //     'rejoinRoom',
+      //     { roomId: get(roomId), ouid: get(session).userId },
+      //     (response: any) => {
+      //       if (response.status == 'success') {
+      //         toastStore.add('🔄 Rejoined existing chat!');
+      //         screen = 'chat';
+      //         if (response.timeEndAt <= Date.now()) {
+      //           toastStore.add('⏰ Chat already ended. Starting fresh.');
+      //           localStorage.removeItem('roomId');
+      //           handleFindFox();
+      //           return;
+      //         }
+      //         chatStore.resetTimer(response.timeEndAt - Date.now());
+      //         console.log('Rejoin response:', response);
+      //         chatStore.updateSession({
+      //           chatId: get(roomId) || '',
+      //           userId: response.userId,
+      //           partnerId: response.partnerId,
+      //         });
 
-              const queued = get(queuedMessages)
-                .filter((m: QueuedMessage) => m.chatId !== get(roomId))
-                .forEach((m) => {
-                  console.log('Removing queued message for old room: ' + m.text);
-                  chatStore.removeQueuedMessage(m.id);
-                });
+      //         const queued = get(queuedMessages)
+      //           .filter((m: QueuedMessage) => m.chatId !== get(roomId))
+      //           .forEach((m) => {
+      //             console.log('Removing queued message for old room: ' + m.text);
+      //             chatStore.removeQueuedMessage(m.id);
+      //           });
 
-              const searchQueued = get(messages).filter(
-                (m: ChatMessage) => m.type === 'self' && !m.timestamp
-              );
+      //         const searchQueued = get(messages).filter(
+      //           (m: ChatMessage) => m.type === 'self' && !m.timestamp
+      //         );
 
-              searchQueued.forEach((m) => {
-                chatStore.addQueuedMessage(
-                  m.text,
-                  get(roomId) || '',
-                  m.id,
-                  'self',
-                  m.replyTo || ''
-                );
-              });
-            } else {
-              toastStore.add(response.msg || 'Failed to rejoin chat. Starting fresh.');
-              localStorage.removeItem('roomId');
-              handleFindFox();
-            }
-          }
+      //         searchQueued.forEach((m) => {
+      //           chatStore.addQueuedMessage(
+      //             m.text,
+      //             get(roomId) || '',
+      //             m.id,
+      //             'self',
+      //             m.replyTo || ''
+      //           );
+      //         });
+      //       } else {
+      //         toastStore.add(response.msg || 'Failed to rejoin chat. Starting fresh.');
+      //         localStorage.removeItem('roomId');
+      //         handleFindFox();
+      //       }
+      //     }
+      //   );
+      // }
+    });
+
+    sock.on('rejoinRoom', (d: unknown) => {
+      const { status, timeEndAt, msg } = d as { status: string; timeEndAt: number; msg: string };
+      if (status === 'success') {
+        toastStore.add('🔄 Rejoined existing chat!');
+        screen = 'chat';
+        if (timeEndAt <= Date.now()) {
+          toastStore.add('⏰ Chat already ended. Starting fresh.');
+          localStorage.removeItem('roomId');
+          handleFindFox();
+          return;
+        }
+        chatStore.resetTimer(timeEndAt - Date.now());
+        console.log('Rejoin response:', d);
+        chatStore.updateSession({
+          chatId: get(roomId) || '',
+        });
+
+        const queued = get(queuedMessages)
+          .filter((m: QueuedMessage) => m.chatId !== get(roomId))
+          .forEach((m) => {
+            console.log('Removing queued message for old room: ' + m.text);
+            chatStore.removeQueuedMessage(m.id);
+          });
+
+        const searchQueued = get(messages).filter(
+          (m: ChatMessage) => m.type === 'self' && !m.timestamp
         );
+
+        searchQueued.forEach((m) => {
+          chatStore.addQueuedMessage(m.text, get(roomId) || '', m.id, 'self', m.replyTo || '');
+        });
+      } else {
+        toastStore.add(msg || 'Failed to rejoin chat. Starting fresh.');
+        localStorage.removeItem('roomId');
+        handleFindFox();
       }
     });
+
     sock.on('disconnect', () => {
       isConnected = false;
       toastStore.add('🌫️ Connection lost. Reconnecting...');
+    });
+
+    sock.on('connect_error', (err: any) => {
+      if (err?.message?.toLowerCase()?.includes('blocked')) {
+        isBlocked = true;
+        fetchBlockStatus();
+      }
+    });
+
+    sock.on('notice', (d: unknown) => {
+      const { content, createdAt, expiresAt } = d as {
+        content: string;
+        createdAt?: number;
+        expiresAt?: number | null;
+      };
+      if (content) {
+        noticeMarkdown = content;
+        noticeCreatedAt = createdAt || Date.now();
+        noticeExpiresAt = typeof expiresAt === 'number' ? expiresAt : null;
+        showNotice = true;
+      } else {
+        noticeMarkdown = '';
+        noticeCreatedAt = null;
+        noticeExpiresAt = null;
+      }
+    });
+
+    sock.on('banned', (d: unknown) => {
+      const { message } = d as { message?: string };
+      isBlocked = true;
+      blockReason = message || 'Blocked';
+      fetchBlockStatus();
     });
 
     sock.on('onlineCount', (d: unknown) => {
@@ -135,9 +375,10 @@
     });
 
     sock.on('init', (d: unknown) => {
-      const { token, berries: b } = d as { token: string; berries: number };
+      const { token, berries: b, userId } = d as { token: string; berries: number; userId: string };
       localStorage.setItem('sneaky_token', token);
       updateBerryUI(b);
+      myuserId.set(userId);
     });
 
     sock.on('berriesUpdate', (d: unknown) => {
@@ -165,10 +406,7 @@
         token,
         berries: b,
         durationMs,
-        msg,
-        partnerId,
         chatId,
-        userId,
       } = d as {
         token: string;
         berries: number;
@@ -187,9 +425,8 @@
       roomId.set((d as { chatId: string }).chatId);
       chatStore.updateSession({
         chatId,
-        userId,
-        partnerId,
         startedAt: Date.now(),
+        messages: [],
       });
     });
 
@@ -230,16 +467,6 @@
             if (timestamp) {
               chatStore.updateMessage(id, { timestamp, meta });
             }
-            // chatStore.updateMessage(id, {
-            //   sticker: {
-            //     id: sticker.id,
-            //     name: sticker.name,
-            //     url: sticker.url,
-            //     type: sticker.type,
-            //     fallbackText: sticker.fallbackText,
-            //   },
-            //   text: text,
-            // });
           } else {
             // New sticker message
             chatStore.addMessage(
@@ -398,7 +625,7 @@
         gameType: string;
       };
       gameProposal.set(proposal);
-      toastStore.add(`🎮 ${proposal.gameType}: Partner wants to play!`);
+      // toastStore.add(`🎮 ${proposal.gameType}: Partner wants to play!`);
     });
 
     sock.on('gameStarted', (d: unknown) => {
@@ -421,7 +648,31 @@
         currentPlayer: players[0],
       });
       gameProposal.set(null);
-      toastStore.add('🎮 Game started!');
+      // toastStore.add('🎮 Game started!');
+    });
+
+    sock.on('gameRejoin', (d: unknown) => {
+      const { gameId, chatId, gameType, state, isFinished, winner, message } = d as {
+        gameId: string;
+        chatId: string;
+        gameType: string;
+        state: unknown;
+        isFinished: boolean;
+        winner: string | null;
+        message: string;
+      };
+
+      activeGame.set({
+        gameId,
+        chatId,
+        gameType,
+        players: [],
+        state,
+        isFinished,
+        winner,
+        currentPlayer: null,
+      });
+      // toastStore.add(message);
     });
 
     sock.on('gameStateUpdate', (d: unknown) => {
@@ -459,10 +710,10 @@
             winner,
             currentPlayer: null,
           });
-          toastStore.add(message);
-          if (winner) {
-            toastStore.add(`✨ +${reward} berries!`);
-          }
+          // // toastStore.add(message);
+          // if (winner) {
+          //   toastStore.add(`✨ +${reward} berries!`);
+          // }
 
           // Game remains open, waiting for user to restart or close
         }
@@ -543,7 +794,7 @@
         response.timestamp && (timestamp = response.timestamp);
       }
     );
-
+ 
     // Handle text messages
     if (!e.type && e.text) {
       chatStore.addMessage(e.text, e.id, 'self', e.replyTo ?? undefined, timestamp ?? undefined);
@@ -614,6 +865,58 @@
   <StatsStrip {onlineCount} hidden={screen === 'chat'} />
   <CooldownBadge />
 
+  {#if isBlocked}
+    <div class="mb-4 rounded-2xl border border-red-400/25 bg-red-500/10 px-4 py-3 text-cream">
+      <div class="text-sm font-bold uppercase tracking-[.06em] text-red-200">Blocked</div>
+      <div class="text-sm text-red-100 mt-1">{blockReason}</div>
+      <div class="text-xs text-red-200 mt-2">
+        {#if blockIsPermanent}
+          Block duration: Permanent
+        {:else}
+          Unblocked at: {formatBlockedUntil()}
+        {/if}
+      </div>
+      {#if blockReportId}
+        <div class="text-xs text-red-200 mt-2">Related report: {blockReportId}</div>
+      {/if}
+      {#if appealId}
+        <div class="text-xs text-red-200 mt-2">Appeal status: {appealStatus || 'pending'}</div>
+      {/if}
+      <button
+        class="mt-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[.06em] text-cream hover:bg-white/20"
+        on:click={openAppealModal}
+      >
+        Appeal
+      </button>
+      {#if appealSuccess}
+        <div class="text-xs text-green-200 mt-2">{appealSuccess}</div>
+      {/if}
+      {#if appealError}
+        <div class="text-xs text-red-200 mt-2">{appealError}</div>
+      {/if}
+    </div>
+  {/if}
+
+  {#if noticeMarkdown && showNotice && (!noticeExpiresAt || noticeExpiresAt > Date.now())}
+    <div class="mb-4 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-cream">
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <div class="text-sm font-bold uppercase tracking-[.06em] text-amber-200">Notice</div>
+        <button
+          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[0.6rem] font-bold uppercase tracking-[.1em] text-cream"
+          on:click={() => (showNotice = false)}
+        >
+          Dismiss
+        </button>
+      </div>
+      <div class="mt-2 text-sm leading-relaxed">{@html renderMarkdown(noticeMarkdown)}</div>
+      <!-- {#if noticeCreatedAt}
+        <div class="mt-2 text-xs text-amber-100">
+          Updated: {new Date(parseInt(noticeCreatedAt.toString())).toLocaleString()}
+        </div>
+      {/if} -->
+    </div>
+  {/if}
+
   <div
     class={`bg-[rgba(255,248,240,0.035)] sm:border border-white/[.07] ${screen == 'chat' ? 'sm:rounded-[18px]' : 'rounded-[18px]'} overflow-hidden  backdrop-blur-md shadow-[0_4px_24px_rgba(0,0,0,.22)]`}
   >
@@ -667,5 +970,66 @@
 />
 
 <ChatHistoryModal visible={showHistoryModal} on:close={handleCloseHistory} />
+
+{#if showAppealModal}
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+    <div
+      class="w-full max-w-md rounded-2xl border border-white/20 bg-[rgba(14,28,14,.96)] p-6 shadow-[0_18px_40px_rgba(0,0,0,.45)]"
+    >
+      <div class="text-lg font-fredoka text-cream mb-4">Appeal Block</div>
+      {#if appealStatus}
+        <div
+          class="mb-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs uppercase tracking-[.06em] text-cream"
+        >
+          Status: {appealStatus}
+        </div>
+      {/if}
+      <label
+        for="appeal-reason"
+        class="block text-xs font-bold uppercase tracking-[.06em] text-cream">Reason</label
+      >
+      <input
+        id="appeal-reason"
+        class="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-cream outline-none"
+        placeholder="Why should your block be lifted?"
+        bind:value={appealReason}
+        disabled={appealSubmitting}
+      />
+
+      <label
+        for="appeal-details"
+        class="block text-xs font-bold uppercase tracking-[.06em] text-cream mt-4"
+      >
+        Details
+      </label>
+      <textarea
+        id="appeal-details"
+        class="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-cream outline-none h-24 resize-none"
+        placeholder="Add any context"
+        bind:value={appealMessage}
+        disabled={appealSubmitting}
+      ></textarea>
+
+      <div class="mt-5 flex gap-2">
+        <button
+          class="flex-1 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-bold text-cream"
+          on:click={() => (showAppealModal = false)}
+          disabled={appealSubmitting}
+        >
+          Cancel
+        </button>
+        <button
+          class="flex-1 rounded-xl bg-red-500 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
+          on:click={submitAppeal}
+          disabled={!appealReason.trim() ||
+            appealSubmitting ||
+            (appealStatus && appealStatus !== 'pending')}
+        >
+          {appealSubmitting ? 'Submitting...' : appealId ? 'Update Appeal' : 'Submit Appeal'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <ToastManager />

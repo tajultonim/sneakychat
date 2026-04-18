@@ -2,6 +2,7 @@
   import { socket } from '$lib/socket';
   import { activeGame, gameNames } from '$stores/gameStore';
   import { toastStore } from '$stores/toastStore';
+  import { myuserId } from '$stores/userStore';
 
   let gameState: any = null;
 
@@ -48,7 +49,7 @@
   let isMyTurn = false;
   $: if (gameState && $activeGame) {
     // TODO: Compare gameState.currentPlayer with userId from socket
-    isMyTurn = true;
+    isMyTurn = gameState.currentPlayer === $myuserId;
   }
 </script>
 
@@ -59,16 +60,19 @@
       {#if gameState.isFinished}
         <div class="w-full text-center">
           {#if gameState.winner}
-            <div class="animate-bounce">
-              <p
-                class="text-xl mt-2 sm:text-2xl font-bold text-white mb-1"
-              >
-                🎉 You won!
-              </p>
-              <p class="text-xs sm:text-sm text-white/60">Victory!</p>
-            </div>
+            {#if gameState.winner === $myuserId}
+              <div class="animate-bounce">
+                <p class="text-xl mt-2 sm:text-2xl font-bold text-white mb-1">🎉 You won!</p>
+                <p class="text-xs sm:text-sm text-white/60">Victory!</p>
+              </div>
+            {:else}
+              <div class="animate-opacity">
+                <p class="text-xl mt-2 sm:text-2xl font-bold text-white mb-1">😢 You lost!</p>
+                <p class="text-xs sm:text-sm text-white/60">Better luck next time!</p>
+              </div>
+            {/if}
           {:else}
-            <div class="opacity-animation">
+            <div class="animate-opacity">
               <p class="text-xl sm:text-2xl font-bold text-amber-300 mb-1">🤝 It's a draw!</p>
               <p class="text-xs sm:text-sm text-white/60">Well played!</p>
             </div>
@@ -80,9 +84,7 @@
         >
           <p class="text-xs uppercase tracking-wider text-white/50 mb-1">
             You are playing as: <span class="text-white"
-              >{$activeGame.players[0] === (socket.id || $activeGame.players[0])
-                ? '❌'
-                : '⭕'}</span
+              >{$activeGame.players[0] == $myuserId ? '❌' : '⭕'}</span
             >
           </p>
           <p class="text-xs uppercase tracking-wider text-white/50 mb-1">Current Turn</p>
@@ -113,20 +115,3 @@
     </div>
   {/if}
 </div>
-
-<style>
-  :global(.opacity-animation) {
-    animation: fadeInScale 0.5s ease-out;
-  }
-
-  @keyframes fadeInScale {
-    from {
-      opacity: 0;
-      transform: scale(0.95);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-</style>

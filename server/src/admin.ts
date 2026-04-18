@@ -1,0 +1,528 @@
+import { Server } from 'socket.io';
+import { blockUser, unblockUser } from './blocklist.js';
+import { blockedUser } from './state.js';
+import {
+  isAdmin,
+  isSuperAdmin,
+  addAdmin,
+  removeAdmin,
+  updateAdminRole,
+  getAllAdmins,
+} from './adminManager.js';
+import { verifyAdminToken } from './adminAuth.js';
+import { deleteReport, getAllReports, getPendingReports, updateReportStatus } from './reports.js';
+import { deleteAppeal, getAllAppeals, getAppealById, updateAppealStatus } from './appeals.js';
+import { clearNotice, getActiveNotice, setNotice } from './notices.js';
+import type { Block } from './types.js';
+
+function checkAdminToken(socket: any): { valid: boolean; adminUserId?: string } {
+  const token = socket.handshake.auth.adminToken;
+
+  if (!token) {
+    return { valid: false };
+  }
+
+  const verified = verifyAdminToken(token);
+  if (!verified) {
+    return { valid: false };
+  }
+
+  return { valid: true, adminUserId: verified.adminUserId };
+}
+
+function getBlockedUsersList(): any[] {
+  const blocked: any[] = [];
+  blockedUser.forEach((block: Block) => {
+    const timeRemaining = block.blockedUntil - Date.now();
+    blocked.push({
+      userId: block.userId,
+      reason: block.reason,
+      blockedUntil: block.blockedUntil,
+      timeRemaining: timeRemaining > 0 ? timeRemaining : 0,
+      isPermanent: block.blockedUntil === Number.MAX_SAFE_INTEGER,
+      reportId: block.reportId || null,
+    });
+  });
+  return blocked.sort((a, b) => b.blockedUntil - a.blockedUntil);
+}
+
+function broadcastBlockedUsersUpdate(io: Server): void {
+  const blockedList = getBlockedUsersList();
+  io.emit('admin:blockedUsersUpdated', { data: blockedList });
+}
+
+export function registerAdminHandlers(io: Server): void {
+  io.on('connection', (socket: any) => {
+    // Get all blocked users
+    socket.on('admin:getBlockedUsers', (data: any, callback?: (data: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid) {
+        callback?.({ error: 'Not authorized' });
+        return;
+      }
+      const blocked = getBlockedUsersList();
+      callback?.({ data: blocked });
+    });
+
+    // Block a user
+    socket.on('admin:blockUser', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      try {
+        const { userId, reason, durationHours = 0, ip, reportId } = data;
+
+        if (!userId) {
+          callback?.({ success: false, error: 'User ID is required' });
+          return;
+        }
+
+        const duration = durationHours > 0 ? durationHours * 60 * 60 * 1000 : 0;
+        await blockUser(
+          userId,
+          reason || 'User blocked by admin',
+          duration,
+          authCheck.adminUserId,
+          ip,
+          reportId
+        );
+
+        if (reportId) {
+          await updateReportStatus(reportId, 'actioned', authCheck.adminUserId);
+          const reports = await getAllReports();
+          io.emit('admin:reportsUpdated', { data: reports });
+        }
+
+        console.log(`👮 Admin ${authCheck.adminUserId} blocked user ${userId}`);
+        callback?.({
+          success: true,
+          message: `User ${userId} has been ${durationHours > 0 ? `blocked for ${durationHours} hours` : 'permanently blocked'}`,
+        });
+
+        // Disconnect the user if they're online
+        disconnectUser(io, userId);
+
+        // Broadcast update to all admins
+        broadcastBlockedUsersUpdate(io);
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Unblock a user
+    socket.on('admin:unblockUser', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      try {
+        const { userId } = data;
+
+        if (!userId) {
+          callback?.({ success: false, error: 'User ID is required' });
+          return;
+        }
+
+        await unblockUser(userId);
+
+        console.log(`👮 Admin ${authCheck.adminUserId} unblocked user ${userId}`);
+        callback?.({ success: true, message: `User ${userId} has been unblocked` });
+
+        // Broadcast update to all admins
+        broadcastBlockedUsersUpdate(io);
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Get all admins (superadmin only)
+    socket.on('admin:getAllAdmins', (data: any, callback?: (data: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ error: 'Not authorized' });
+        return;
+      }
+
+      // Check if superadmin
+      if (!isSuperAdmin(authCheck.adminUserId)) {
+        callback?.({ error: 'Only superadmins can view admin list' });
+        return;
+      }
+
+      const admins = getAllAdmins();
+      callback?.({ data: admins });
+    });
+
+    // Add an admin (superadmin only)
+    socket.on('admin:addAdmin', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      if (!isSuperAdmin(authCheck.adminUserId)) {
+        callback?.({ success: false, error: 'Only superadmins can add admins' });
+        return;
+      }
+
+      try {
+        const { userId, role = 'moderator' } = data;
+
+        if (!userId) {
+          callback?.({ success: false, error: 'User ID is required' });
+          return;
+        }
+
+        if (!['superadmin', 'moderator'].includes(role)) {
+          callback?.({ success: false, error: 'Invalid role' });
+          return;
+        }
+
+        await addAdmin(userId, role, authCheck.adminUserId);
+
+        console.log(`👮 Superadmin ${authCheck.adminUserId} added ${role} ${userId}`);
+        callback?.({ success: true, message: `${userId} is now a ${role}` });
+
+        // Broadcast admin list update
+        const admins = getAllAdmins();
+        io.emit('admin:adminsUpdated', { data: admins });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Remove an admin (superadmin only)
+    socket.on('admin:removeAdmin', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      if (!isSuperAdmin(authCheck.adminUserId)) {
+        callback?.({ success: false, error: 'Only superadmins can remove admins' });
+        return;
+      }
+
+      try {
+        const { userId } = data;
+
+        if (!userId) {
+          callback?.({ success: false, error: 'User ID is required' });
+          return;
+        }
+
+        await removeAdmin(userId);
+
+        console.log(`👮 Superadmin ${authCheck.adminUserId} removed admin ${userId}`);
+        callback?.({ success: true, message: `${userId} is no longer an admin` });
+
+        // Broadcast admin list update
+        const admins = getAllAdmins();
+        io.emit('admin:adminsUpdated', { data: admins });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Update admin role (superadmin only)
+    socket.on('admin:updateAdminRole', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      if (!isSuperAdmin(authCheck.adminUserId)) {
+        callback?.({ success: false, error: 'Only superadmins can update admin roles' });
+        return;
+      }
+
+      try {
+        const { userId, role } = data;
+
+        if (!userId || !role) {
+          callback?.({ success: false, error: 'User ID and role are required' });
+          return;
+        }
+
+        if (!['superadmin', 'moderator'].includes(role)) {
+          callback?.({ success: false, error: 'Invalid role' });
+          return;
+        }
+
+        await updateAdminRole(userId, role);
+
+        console.log(`👮 Superadmin ${authCheck.adminUserId} updated ${userId} to ${role}`);
+        callback?.({ success: true, message: `${userId} is now a ${role}` });
+
+        // Broadcast admin list update
+        const admins = getAllAdmins();
+        io.emit('admin:adminsUpdated', { data: admins });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Get all reports
+    socket.on('admin:getReports', async (data: any, callback?: (data: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ error: 'Not authorized' });
+        return;
+      }
+
+      try {
+        const reports = await getAllReports();
+        callback?.({ data: reports });
+      } catch (err: any) {
+        callback?.({ error: err.message || 'Failed to get reports' });
+      }
+    });
+
+    // Update report status
+    socket.on('admin:updateReportStatus', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      try {
+        const { reportId, status } = data;
+
+        if (!reportId || !status) {
+          callback?.({ success: false, error: 'Report ID and status required' });
+          return;
+        }
+
+        if (!['pending', 'dismissed', 'actioned'].includes(status)) {
+          callback?.({ success: false, error: 'Invalid status' });
+          return;
+        }
+
+        await updateReportStatus(reportId, status, authCheck.adminUserId);
+
+        console.log(`👮 Admin ${authCheck.adminUserId} updated report ${reportId} to ${status}`);
+        callback?.({ success: true, message: `Report marked as ${status}` });
+
+        // Broadcast update to all admins
+        const reports = await getAllReports();
+        io.emit('admin:reportsUpdated', { data: reports });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Delete report
+    socket.on('admin:deleteReport', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      if (!isSuperAdmin(authCheck.adminUserId)) {
+        callback?.({ success: false, error: 'Only superadmins can delete reports' });
+        return;
+      }
+
+      try {
+        const { reportId } = data;
+
+        if (!reportId) {
+          callback?.({ success: false, error: 'Report ID required' });
+          return;
+        }
+
+        await deleteReport(reportId);
+
+        console.log(`👮 Superadmin ${authCheck.adminUserId} deleted report ${reportId}`);
+        callback?.({ success: true, message: 'Report deleted' });
+
+        const reports = await getAllReports();
+        io.emit('admin:reportsUpdated', { data: reports });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Get all appeals
+    socket.on('admin:getAppeals', async (data: any, callback?: (data: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ error: 'Not authorized' });
+        return;
+      }
+
+      try {
+        const appeals = await getAllAppeals();
+        callback?.({ data: appeals });
+      } catch (err: any) {
+        callback?.({ error: err.message || 'Failed to get appeals' });
+      }
+    });
+
+    // Get active notice
+    socket.on('admin:getNotice', async (data: any, callback?: (data: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ error: 'Not authorized' });
+        return;
+      }
+
+      try {
+        const notice = await getActiveNotice();
+        callback?.({ data: notice });
+      } catch (err: any) {
+        callback?.({ error: err.message || 'Failed to get notice' });
+      }
+    });
+
+    // Set notice
+    socket.on('admin:setNotice', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      if (!isSuperAdmin(authCheck.adminUserId)) {
+        callback?.({ success: false, error: 'Only superadmins can send notices' });
+        return;
+      }
+
+      try {
+        const { content, expiresAt } = data || {};
+        if (!content || typeof content !== 'string') {
+          callback?.({ success: false, error: 'Notice content is required' });
+          return;
+        }
+
+        const parsedExpiresAt =
+          typeof expiresAt === 'number' && Number.isFinite(expiresAt) ? expiresAt : null;
+
+        const notice = await setNotice(content, authCheck.adminUserId, parsedExpiresAt);
+        callback?.({ success: true, data: notice });
+        io.emit('notice', {
+          content: notice.content,
+          createdAt: notice.created_at,
+          expiresAt: notice.expires_at ?? null,
+        });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Clear notice
+    socket.on('admin:clearNotice', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      if (!isSuperAdmin(authCheck.adminUserId)) {
+        callback?.({ success: false, error: 'Only superadmins can clear notices' });
+        return;
+      }
+
+      try {
+        await clearNotice();
+        callback?.({ success: true });
+        io.emit('notice', { content: '', createdAt: Date.now() });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Update appeal status
+    socket.on('admin:updateAppealStatus', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      try {
+        const { appealId, status } = data;
+
+        if (!appealId || !status) {
+          callback?.({ success: false, error: 'Appeal ID and status required' });
+          return;
+        }
+
+        if (!['pending', 'approved', 'rejected'].includes(status)) {
+          callback?.({ success: false, error: 'Invalid status' });
+          return;
+        }
+
+        await updateAppealStatus(appealId, status, authCheck.adminUserId);
+
+        if (status === 'approved') {
+          const appeal = await getAppealById(appealId);
+          if (appeal?.user_id) {
+            await unblockUser(appeal.user_id);
+            broadcastBlockedUsersUpdate(io);
+          }
+        }
+
+        console.log(`👮 Admin ${authCheck.adminUserId} updated appeal ${appealId} to ${status}`);
+        callback?.({ success: true, message: `Appeal marked as ${status}` });
+
+        const appeals = await getAllAppeals();
+        io.emit('admin:appealsUpdated', { data: appeals });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Delete appeal
+    socket.on('admin:deleteAppeal', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      if (!isSuperAdmin(authCheck.adminUserId)) {
+        callback?.({ success: false, error: 'Only superadmins can delete appeals' });
+        return;
+      }
+
+      try {
+        const { appealId } = data;
+
+        if (!appealId) {
+          callback?.({ success: false, error: 'Appeal ID required' });
+          return;
+        }
+
+        await deleteAppeal(appealId);
+
+        console.log(`👮 Superadmin ${authCheck.adminUserId} deleted appeal ${appealId}`);
+        callback?.({ success: true, message: 'Appeal deleted' });
+
+        const appeals = await getAllAppeals();
+        io.emit('admin:appealsUpdated', { data: appeals });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+  });
+}
+
+function disconnectUser(io: Server, userId: string): void {
+  for (const socket of io.sockets.sockets.values()) {
+    if ((socket as any).foxData?.userId === userId) {
+      socket.emit('banned', { message: 'You have been blocked from the service' });
+      socket.disconnect(true);
+    }
+  }
+}

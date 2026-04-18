@@ -1,8 +1,10 @@
 import { Server, Socket } from 'socket.io';
+import type { FoxPayload } from './types.js';
 import { GameFactory } from './games/GameFactory.js';
 import {
-  socketPayloads,
-  socketToChat,
+  userPayloads,
+  userIdToChat,
+  userIdToSocket,
   activeChats,
   activeGames,
   createGameInstance,
@@ -21,9 +23,12 @@ const activeProposals = new Map<
 >();
 
 export function registerGameEventHandlers(io: Server, socket: Socket): void {
+  const foxData = (socket as any).foxData as FoxPayload;
+
   // ── proposeGame ────────────────────────────────────────────────────────
   socket.on('proposeGame', ({ gameType }: { gameType: GameType }) => {
-    const chatId = socketToChat.get(socket.id);
+    if (!foxData?.userId) return;
+    const chatId = userIdToChat.get(foxData.userId);
     if (!chatId) return socket.emit('error', { msg: 'Not in a chat.' });
 
     const chat = activeChats.get(chatId);
@@ -32,7 +37,7 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
     // Check if game already exists for this chat
     if (activeProposals.has(chatId) || getGameByChat(chatId)) {
       let game = getGameByChat(chatId);
-      if (game && !game?.players.includes(socket.id)) {
+      if (game && !game?.players.includes(foxData.userId)) {
         removeGame(game?.gameId);
       } else {
         return socket.emit('error', { msg: 'Game already in progress or proposed.' });
@@ -44,16 +49,17 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
       return socket.emit('error', { msg: 'Invalid game type.' });
     }
 
-    const partnerId = chat.users.find((id) => id !== socket.id);
+    const partnerId = chat.users.find((userId) => userId !== foxData.userId);
     if (!partnerId) return socket.emit('error', { msg: 'Partner not found.' });
 
-    const partnerSocket = io.sockets.sockets.get(partnerId);
+    const partnerSocketId = userIdToSocket.get(partnerId);
+    const partnerSocket = partnerSocketId ? io.sockets.sockets.get(partnerSocketId) : null;
     if (!partnerSocket) return socket.emit('error', { msg: 'Partner is offline.' });
 
     const gameId = generateChatId(); // Reuse ID generator for game IDs
     const proposal = {
       gameType,
-      proposedBy: socket.id,
+      proposedBy: foxData.userId,
       timeout: setTimeout(() => {
         activeProposals.delete(chatId);
         socket.emit('info', { msg: 'Game proposal expired.' });
@@ -67,7 +73,7 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
     partnerSocket.emit('gameProposal', {
       gameId,
       chatId,
-      proposedBy: socket.id,
+      proposedBy: foxData.userId,
       gameType,
     });
 
@@ -76,17 +82,19 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
 
   // ── declineGame ────────────────────────────────────────────────────────
   socket.on('declineGame', ({ chatId }: { chatId: string }) => {
+    if (!foxData?.userId) return;
     const proposal = activeProposals.get(chatId);
     if (!proposal) return socket.emit('error', { msg: 'No game proposal to decline.' });
 
     const chat = activeChats.get(chatId);
-    if (!chat || !chat.users.includes(socket.id)) return;
+    if (!chat || !chat.users.includes(foxData.userId)) return;
 
     const proposerId = proposal.proposedBy;
     clearTimeout(proposal.timeout);
     activeProposals.delete(chatId);
 
-    const proposerSocket = io.sockets.sockets.get(proposerId);
+    const proposerSocketId = userIdToSocket.get(proposerId);
+    const proposerSocket = proposerSocketId ? io.sockets.sockets.get(proposerSocketId) : null;
     if (proposerSocket) {
       proposerSocket.emit('info', { msg: 'Your partner declined the game.' });
     }
@@ -97,11 +105,12 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
 
   // ── acceptGame ────────────────────────────────────────────────────────
   socket.on('acceptGame', ({ gameId, chatId }: { gameId: string; chatId: string }) => {
+    if (!foxData?.userId) return;
     const proposal = activeProposals.get(chatId);
     if (!proposal) return socket.emit('error', { msg: 'No active game proposal.' });
 
     const chat = activeChats.get(chatId);
-    if (!chat || !chat.users.includes(socket.id)) return;
+    if (!chat || !chat.users.includes(foxData.userId)) return;
 
     const proposerId = proposal.proposedBy;
     const gameType = proposal.gameType;
@@ -111,11 +120,12 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
     activeProposals.delete(chatId);
 
     // Create new game instance
-    const game = createGameInstance(gameId, chatId, gameType, proposerId, socket.id);
+    const game = createGameInstance(gameId, chatId, gameType, proposerId, foxData.userId);
     game.status = 'playing';
     game.startedAt = Date.now();
 
-    const proposerSocket = io.sockets.sockets.get(proposerId);
+    const proposerSocketId = userIdToSocket.get(proposerId);
+    const proposerSocket = proposerSocketId ? io.sockets.sockets.get(proposerSocketId) : null;
 
     // Send game start event to both players
     const gameState = {
@@ -131,6 +141,12 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
     if (proposerSocket) {
       proposerSocket.emit('gameStarted', gameState);
     }
+    socket.emit('info', { msg: `You accepted the game proposal for ${gameType}.` });
+    if (proposerSocket) {
+      proposerSocket.emit('info', {
+        msg: `Your partner accepted the game proposal for ${gameType}.`,
+      });
+    }
 
     console.log(`🎮 Game started: ${chatId} - ${gameType}`);
   });
@@ -140,6 +156,7 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
     'makeGameMove',
     ({ gameId, move }: { gameId: string; move: unknown }, callback: (response: any) => void) => {
       if (!callback || typeof callback !== 'function') return;
+      if (!foxData?.userId) return;
 
       const game = activeGames.get(gameId);
       if (!game) return callback({ status: 'error', msg: 'Game not found.' });
@@ -148,7 +165,7 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
         return callback({ status: 'error', msg: 'Game is already finished.' });
       }
 
-      if (!game.players.includes(socket.id)) {
+      if (!game.players.includes(foxData.userId)) {
         return callback({ status: 'error', msg: 'You are not a player in this game.' });
       }
 
@@ -166,15 +183,19 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
         (gameObj as any).isFinished = (game.status as any) === 'finished';
         (gameObj as any).winner = game.winner;
 
+        const partnerUserId = game.players.find((id) => id !== foxData.userId);
+        const partnerSocketId = partnerUserId ? userIdToSocket.get(partnerUserId) : null;
+        const partnerSocket = partnerSocketId ? io.sockets.sockets.get(partnerSocketId) : null;
+
         // Validate and apply move
-        if (!gameObj.isValidMove(socket.id, move).isValid) {
+        if (!gameObj.isValidMove(foxData.userId, move).isValid) {
           return callback({
             status: 'error',
-            msg: gameObj.isValidMove(socket.id, move).message || 'Invalid move.',
+            msg: gameObj.isValidMove(foxData.userId, move).message || 'Invalid move.',
           });
         }
 
-        gameObj.applyMove(socket.id, move);
+        gameObj.applyMove(foxData.userId, move);
 
         // Update game state
         game.state = gameObj.state;
@@ -188,17 +209,30 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
 
           // Award berries if there's a winner
           if (game.winner) {
-            const winnerPayload = socketPayloads.get(game.winner);
+            const winnerPayload = userPayloads.get(game.winner);
             if (winnerPayload) {
               winnerPayload.berries = clamp(winnerPayload.berries + GAME_WIN_REWARD);
-              const winnerSocket = io.sockets.sockets.get(game.winner);
+              const winnerSocketId = userIdToSocket.get(game.winner);
+              const winnerSocket = winnerSocketId ? io.sockets.sockets.get(winnerSocketId) : null;
               if (winnerSocket) {
                 winnerSocket.emit('berriesUpdate', {
                   token: signToken(winnerPayload),
                   berries: winnerPayload.berries,
                 });
+                winnerSocket.emit('info', {
+                  msg: `🎉 You won the game! +${GAME_WIN_REWARD} berries!`,
+                });
+              }
+              const loserSocket = game.winner === foxData.userId ? partnerSocket : socket;
+              if (loserSocket) {
+                loserSocket.emit('info', {
+                  msg: `😞 You lost the game. Better luck next time!`,
+                });
               }
             }
+          } else {
+            socket.emit('info', { msg: `🤝 The game ended in a draw!` });
+            partnerSocket?.emit('info', { msg: `🤝 The game ended in a draw!` });
           }
 
           // Notify both players
@@ -213,9 +247,6 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
           };
 
           callback({ status: 'success', gameState });
-
-          const partnerId = game.players.find((id) => id !== socket.id);
-          const partnerSocket = partnerId ? io.sockets.sockets.get(partnerId) : null;
 
           socket.emit('gameEnded', gameState);
           if (partnerSocket) {
@@ -237,8 +268,9 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
           callback({ status: 'success', gameState });
 
           // Broadcast to both players
-          const partnerId = game.players.find((id) => id !== socket.id);
-          const partnerSocket = partnerId ? io.sockets.sockets.get(partnerId) : null;
+          const partnerUserId = game.players.find((id) => id !== foxData.userId);
+          const partnerSocketId = partnerUserId ? userIdToSocket.get(partnerUserId) : null;
+          const partnerSocket = partnerSocketId ? io.sockets.sockets.get(partnerSocketId) : null;
 
           if (partnerSocket) {
             partnerSocket.emit('gameStateUpdate', gameState);
@@ -254,15 +286,16 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
 
   // ── quitGame ───────────────────────────────────────────────────────────
   socket.on('quitGame', ({ gameId }: { gameId: string }) => {
+    if (!foxData?.userId) return;
     const game = activeGames.get(gameId);
     if (!game) return socket.emit('error', { msg: 'Game not found.' });
 
-    if (!game.players.includes(socket.id)) {
+    if (!game.players.includes(foxData.userId)) {
       return socket.emit('error', { msg: 'You are not a player in this game.' });
     }
 
     // Determine winner (the other player)
-    const winnerId = game.players.find((id) => id !== socket.id);
+    const winnerId = game.players.find((id) => id !== foxData.userId);
     game.winner = winnerId || null;
     game.status = 'finished';
     game.endedAt = Date.now();
@@ -279,10 +312,11 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
 
     // Award berries to winner
     if (winnerId) {
-      const winnerPayload = socketPayloads.get(winnerId);
+      const winnerPayload = userPayloads.get(winnerId);
       if (winnerPayload) {
         winnerPayload.berries = clamp(winnerPayload.berries + GAME_WIN_REWARD);
-        const winnerSocket = io.sockets.sockets.get(winnerId);
+        const winnerSocketId = userIdToSocket.get(winnerId);
+        const winnerSocket = winnerSocketId ? io.sockets.sockets.get(winnerSocketId) : null;
         if (winnerSocket) {
           winnerSocket.emit('berriesUpdate', {
             token: signToken(winnerPayload),
@@ -300,4 +334,27 @@ export function registerGameEventHandlers(io: Server, socket: Socket): void {
     removeGame(gameId);
     console.log(`⛔ Game quit: ${gameId}`);
   });
+}
+
+export function rejoinGameIfExists(io: Server, socket: Socket): void {
+  const foxData = (socket as any).foxData as FoxPayload;
+  if (!foxData?.userId) return;
+
+  const chatId = userIdToChat.get(foxData.userId);
+  if (!chatId) return;
+
+  const game = getGameByChat(chatId);
+  if (!game) return;
+
+  const gameState = {
+    gameId: game.gameId,
+    chatId: game.chatId,
+    gameType: game.gameType,
+    state: game.state,
+    isFinished: game.status === 'finished',
+    winner: game.winner,
+    message: `Rejoined ${game.gameType} in progress.`,
+  };
+
+  socket.emit('gameRejoin', gameState);
 }
