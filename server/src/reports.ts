@@ -138,14 +138,14 @@ export async function submitReport(payload: ReportPayload): Promise<string> {
       .input('reason', payload.reason)
       .input('message_meta', metaJson)
       .input('conversation_context', conversationJson)
-      .input('reported_at', Date.now()).query(`
+      .input('created_at', Date.now()).query(`
         INSERT INTO reports (
           report_id, reporter_id, reported_user_id, chat_id, message_id,
-          message_text, reason, message_meta, conversation_context, reported_at, status
+          message_text, reason, message_meta, conversation_context, created_at, status
         )
         VALUES (
           @report_id, @reporter_id, @reported_user_id, @chat_id, @message_id,
-          @message_text, @reason, @message_meta, @conversation_context, @reported_at, 'pending'
+          @message_text, @reason, @message_meta, @conversation_context, @created_at, 'pending'
         )
       `);
 
@@ -165,8 +165,11 @@ export async function submitReport(payload: ReportPayload): Promise<string> {
 export async function getPendingReports(): Promise<any[]> {
   try {
     const pool = await getPool();
+    await pool.request().query(`
+      UPDATE reports SET status = 'actioned' WHERE status = 'reviewed'
+    `);
     const result = await pool.request().query(`
-      SELECT * FROM reports WHERE status = 'pending' ORDER BY reported_at DESC
+      SELECT * FROM reports WHERE status = 'pending' ORDER BY created_at DESC
     `);
 
     return result.recordset;
@@ -182,8 +185,11 @@ export async function getPendingReports(): Promise<any[]> {
 export async function getAllReports(): Promise<any[]> {
   try {
     const pool = await getPool();
+    await pool.request().query(`
+      UPDATE reports SET status = 'actioned' WHERE status = 'reviewed'
+    `);
     const result = await pool.request().query(`
-      SELECT * FROM reports ORDER BY reported_at DESC
+      SELECT * FROM reports ORDER BY created_at DESC
     `);
 
     return result.recordset;
@@ -198,7 +204,7 @@ export async function getAllReports(): Promise<any[]> {
  */
 export async function updateReportStatus(
   reportId: string,
-  status: 'pending' | 'reviewed' | 'dismissed' | 'actioned',
+  status: 'pending' | 'dismissed' | 'actioned',
   reviewedBy?: string
 ): Promise<void> {
   try {
@@ -218,6 +224,24 @@ export async function updateReportStatus(
     console.log(`📋 Report ${reportId} marked as ${status}`);
   } catch (err) {
     console.error('❌ Failed to update report:', err);
+    throw err;
+  }
+}
+
+/**
+ * Delete a report (admin only)
+ */
+export async function deleteReport(reportId: string): Promise<void> {
+  try {
+    const pool = await getPool();
+
+    await pool.request().input('report_id', reportId).query(`
+        DELETE FROM reports WHERE report_id = @report_id
+      `);
+
+    console.log(`🗑️ Report ${reportId} deleted`);
+  } catch (err) {
+    console.error('❌ Failed to delete report:', err);
     throw err;
   }
 }

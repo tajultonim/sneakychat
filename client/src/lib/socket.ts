@@ -43,6 +43,10 @@ export const socket = {
   },
   disconnect: () => _socket?.disconnect(),
   emitwithtimeout(event: string, data?: unknown, callback?: (...args: unknown[]) => void): void {
+    if (typeof data === 'function') {
+      _socket?.timeout(3000).emit(event, undefined, data as (...args: unknown[]) => void);
+      return;
+    }
     _socket?.timeout(3000).emit(event, data, callback);
   },
 };

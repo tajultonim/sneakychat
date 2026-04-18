@@ -51,9 +51,11 @@
   let blockIsPermanent = false;
   let blockReportId = '';
   let showAppealModal = false;
+  let appealId = '';
   let appealReason = '';
   let appealMessage = '';
   let appealReportId = '';
+  let appealStatus = '';
   let appealSubmitting = false;
   let appealSuccess = '';
   let appealError = '';
@@ -108,6 +110,9 @@
         blockedUntil = data.blockedUntil || null;
         blockIsPermanent = !!data.isPermanent;
         blockReportId = data.reportId || '';
+        if (blockReportId && !showAppealModal) {
+          fetchExistingAppeal(blockReportId);
+        }
       } else {
         isBlocked = false;
         blockReportId = '';
@@ -126,12 +131,13 @@
     try {
       const token = localStorage.getItem('sneaky_token');
       const res = await fetch(`${import.meta.env.VITE_SERVER_URL}/api/appeal`, {
-        method: 'POST',
+        method: appealId ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: token ? `Bearer ${token}` : '',
         },
         body: JSON.stringify({
+          appealId: appealId || undefined,
           reason: appealReason,
           message: appealMessage,
           reportId: appealReportId || null,
@@ -140,10 +146,14 @@
 
       const data = await res.json();
       if (data?.success) {
-        appealSuccess = 'Appeal submitted. We will review it soon.';
+        appealSuccess = appealId
+          ? 'Appeal updated. We will review it soon.'
+          : 'Appeal submitted. We will review it soon.';
         appealReason = '';
         appealMessage = '';
         showAppealModal = false;
+        appealId = '';
+        appealStatus = '';
       } else {
         appealError = data?.error || 'Failed to submit appeal.';
       }
@@ -151,6 +161,48 @@
       appealError = 'Failed to submit appeal.';
     } finally {
       appealSubmitting = false;
+    }
+  }
+
+  async function fetchExistingAppeal(reportId: string): Promise<void> {
+    if (!browser || !reportId) return;
+    try {
+      const token = localStorage.getItem('sneaky_token');
+      const res = await fetch(
+        `${import.meta.env.VITE_SERVER_URL}/api/appeal?reportId=${encodeURIComponent(reportId)}`,
+        {
+          headers: {
+            Authorization: token ? `Bearer ${token}` : '',
+          },
+        }
+      );
+      const data = await res.json();
+      if (data?.success && data.appeal) {
+        appealId = data.appeal.appeal_id || '';
+        appealReason = data.appeal.reason || '';
+        appealMessage = data.appeal.message || '';
+        appealStatus = data.appeal.status || '';
+      } else {
+        appealId = '';
+        appealStatus = '';
+      }
+    } catch {
+      appealId = '';
+      appealStatus = '';
+    }
+  }
+
+  function openAppealModal(): void {
+    appealReportId = blockReportId;
+    appealError = '';
+    appealSuccess = '';
+    appealId = '';
+    appealReason = '';
+    appealMessage = '';
+    appealStatus = '';
+    showAppealModal = true;
+    if (blockReportId) {
+      fetchExistingAppeal(blockReportId);
     }
   }
 
@@ -783,12 +835,12 @@
       {#if blockReportId}
         <div class="text-xs text-red-200 mt-2">Related report: {blockReportId}</div>
       {/if}
+      {#if appealId}
+        <div class="text-xs text-red-200 mt-2">Appeal status: {appealStatus || 'pending'}</div>
+      {/if}
       <button
         class="mt-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[.06em] text-cream hover:bg-white/20"
-        on:click={() => {
-          appealReportId = blockReportId;
-          showAppealModal = true;
-        }}
+        on:click={openAppealModal}
       >
         Appeal
       </button>
@@ -861,6 +913,13 @@
       class="w-full max-w-md rounded-2xl border border-white/20 bg-[rgba(14,28,14,.96)] p-6 shadow-[0_18px_40px_rgba(0,0,0,.45)]"
     >
       <div class="text-lg font-fredoka text-cream mb-4">Appeal Block</div>
+      {#if appealStatus}
+        <div
+          class="mb-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs uppercase tracking-[.06em] text-cream"
+        >
+          Status: {appealStatus}
+        </div>
+      {/if}
       <label class="block text-xs font-bold uppercase tracking-[.06em] text-cream">Reason</label>
       <input
         class="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-cream outline-none"
@@ -879,16 +938,6 @@
         disabled={appealSubmitting}
       ></textarea>
 
-      <label class="block text-xs font-bold uppercase tracking-[.06em] text-cream mt-4">
-        Report ID (optional)
-      </label>
-      <input
-        class="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-cream outline-none"
-        placeholder="Related report id"
-        bind:value={appealReportId}
-        disabled={appealSubmitting}
-      />
-
       <div class="mt-5 flex gap-2">
         <button
           class="flex-1 rounded-xl border border-white/10 bg-white/10 px-3 py-2 text-sm font-bold text-cream"
@@ -900,9 +949,11 @@
         <button
           class="flex-1 rounded-xl bg-red-500 px-3 py-2 text-sm font-bold text-white disabled:opacity-50"
           on:click={submitAppeal}
-          disabled={!appealReason.trim() || appealSubmitting}
+          disabled={!appealReason.trim() ||
+            appealSubmitting ||
+            (appealStatus && appealStatus !== 'pending')}
         >
-          {appealSubmitting ? 'Submitting...' : 'Submit Appeal'}
+          {appealSubmitting ? 'Submitting...' : appealId ? 'Update Appeal' : 'Submit Appeal'}
         </button>
       </div>
     </div>

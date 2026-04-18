@@ -1,6 +1,12 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { browser } from '$app/environment';
+  import { replaceState } from '$app/navigation';
+  import { onDestroy, onMount } from 'svelte';
   import { connectSocket, socket } from '$lib/socket';
+
+  type TabKey = 'blocked' | 'admins' | 'reports' | 'appeals';
+  type ReportStatusTab = 'all' | 'pending' | 'actioned' | 'dismissed';
+  type AppealStatusTab = 'all' | 'pending' | 'approved' | 'rejected';
 
   interface BlockedUser {
     userId: string;
@@ -25,6 +31,7 @@
   let adminToken = '';
   let currentAdminUserId = '';
   let isSuperAdmin = false;
+  let isRoleKnown = false;
   let loginError = '';
   let isLoggingIn = false;
 
@@ -36,8 +43,12 @@
   let isLoading = true;
   let error = '';
   let success = '';
-  let activeTab: 'blocked' | 'admins' | 'reports' | 'appeals' = 'blocked';
-  let reportStatusTab: 'all' | 'pending' | 'reviewed' | 'actioned' | 'dismissed' = 'pending';
+  let activeTab: TabKey = 'reports';
+  let reportStatusTab: ReportStatusTab = 'pending';
+  let appealStatusTab: AppealStatusTab = 'pending';
+  let selectedReportId = '';
+  let selectedAppealId = '';
+  let requestedTab: TabKey | null = null;
 
   // Form state for blocking users
   let blockUserId = '';
@@ -50,62 +61,127 @@
   let newAdminRole: 'superadmin' | 'moderator' = 'moderator';
   let isSubmittingAdmin = false;
 
+  const superTabs: TabKey[] = ['admins', 'reports', 'appeals'];
+
+  function isTabKey(value: string): value is TabKey {
+    return ['blocked', 'admins', 'reports', 'appeals'].includes(value);
+  }
+
+  function resolveTab(tab: TabKey): TabKey {
+    if (superTabs.includes(tab)) {
+      return isSuperAdmin ? tab : 'blocked';
+    }
+    return tab;
+  }
+
+  function syncTabToUrl(tab: TabKey): void {
+    if (!browser) return;
+    const params = new URLSearchParams(window.location.search);
+    params.set('tab', tab);
+    const next = `${window.location.pathname}?${params.toString()}`;
+    replaceState(next, {});
+  }
+
+  function applyTab(tab: TabKey): void {
+    activeTab = resolveTab(tab);
+    syncTabToUrl(activeTab);
+  }
+
+  function resolveRequestedTab(): void {
+    if (requestedTab) {
+      applyTab(requestedTab);
+      requestedTab = null;
+    } else if (!isSuperAdmin && activeTab !== 'blocked') {
+      applyTab('blocked');
+    } else {
+      syncTabToUrl(activeTab);
+    }
+  }
+
+  function initTabFromUrl(): void {
+    if (!browser) return;
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab') || '';
+    if (!tab || !isTabKey(tab)) {
+      syncTabToUrl(activeTab);
+      return;
+    }
+
+    if (!isRoleKnown && superTabs.includes(tab)) {
+      requestedTab = tab;
+      return;
+    }
+
+    applyTab(tab);
+  }
+
   onMount(() => {
-    const stored = localStorage.getItem('adminToken');
+    initTabFromUrl();
+
+    const stored = browser ? localStorage.getItem('adminToken') : null;
     if (stored) {
       verifyToken(stored);
     } else {
       isLoading = false;
     }
 
-    // Listen for real-time updates from other admins
-    const sock = socket;
-
-    sock.on('admin:blockedUsersUpdated', (data: any) => {
+    const handleBlockedUpdated = (data: any) => {
       if (data.data) {
         blockedUsers = data.data;
         sortBlockedUsers();
-        success = '🔄 Blocked users list updated';
+        success = 'Blocked users list updated.';
         setTimeout(() => {
           success = '';
-        }, 3000);
+        }, 2400);
       }
-    });
+    };
 
-    sock.on('admin:adminsUpdated', (data: any) => {
+    const handleAdminsUpdated = (data: any) => {
       if (data.data) {
         admins = data.data;
         sortAdmins();
-        success = '🔄 Admins list updated';
+        success = 'Admins list updated.';
         setTimeout(() => {
           success = '';
-        }, 3000);
+        }, 2400);
       }
-    });
+    };
 
-    sock.on('admin:reportsUpdated', (data: any) => {
-      if (data.data) {
+    const handleReportsUpdated = (data: any) => {
+      if (Array.isArray(data.data)) {
         reports = data.data;
         sortReports();
-        success = '🔄 Reports list updated';
+        success = 'Reports list updated.';
         setTimeout(() => {
           success = '';
-        }, 3000);
+        }, 2400);
       }
-    });
+    };
 
-    sock.on('admin:appealsUpdated', (data: any) => {
-      if (data.data) {
+    const handleAppealsUpdated = (data: any) => {
+      if (Array.isArray(data.data)) {
         appeals = data.data;
-        success = '🔄 Appeals list updated';
+        success = 'Appeals list updated.';
         setTimeout(() => {
           success = '';
-        }, 3000);
+        }, 2400);
       }
+    };
+
+    socket.on('admin:blockedUsersUpdated', handleBlockedUpdated);
+    socket.on('admin:adminsUpdated', handleAdminsUpdated);
+    socket.on('admin:reportsUpdated', handleReportsUpdated);
+    socket.on('admin:appealsUpdated', handleAppealsUpdated);
+
+    onDestroy(() => {
+      socket.off('admin:blockedUsersUpdated', handleBlockedUpdated);
+      socket.off('admin:adminsUpdated', handleAdminsUpdated);
+      socket.off('admin:reportsUpdated', handleReportsUpdated);
+      socket.off('admin:appealsUpdated', handleAppealsUpdated);
     });
   });
 
-  async function verifyToken(token: string) {
+  async function verifyToken(token: string): Promise<void> {
     try {
       const res = await fetch(`${import.meta.env.VITE_SERVER_URL}/api/admin/verify`, {
         method: 'POST',
@@ -124,14 +200,14 @@
         localStorage.removeItem('adminToken');
         isLoading = false;
       }
-    } catch (err) {
+    } catch {
       isLoading = false;
     }
   }
 
-  async function handleLogin() {
+  async function handleLogin(): Promise<void> {
     if (!adminUsername || !adminPassword) {
-      loginError = '❌ Username and password required';
+      loginError = 'Username and password required.';
       return;
     }
 
@@ -156,67 +232,108 @@
         loadAdminData();
       } else {
         const data = await res.json();
-        loginError = `❌ ${data.error || 'Login failed'}`;
+        loginError = data.error || 'Login failed.';
       }
-    } catch (err) {
-      loginError = '❌ Connection error';
+    } catch {
+      loginError = 'Connection error.';
     } finally {
       isLoggingIn = false;
     }
   }
 
-  function handleLogout() {
+  function handleLogout(): void {
     adminToken = '';
     currentAdminUserId = '';
     isAuthenticated = false;
     isSuperAdmin = false;
+    isRoleKnown = false;
     blockedUsers = [];
     admins = [];
     reports = [];
+    appeals = [];
     localStorage.removeItem('adminToken');
+    activeTab = 'reports';
+    syncTabToUrl('reports');
   }
 
-  function loadAdminData() {
-    isLoading = true;
-    const sock = connectSocket();
-
-    sock.emit('admin:getBlockedUsers', (response: any) => {
-      if (response.error) {
-        error = '❌ Failed to load blocked users';
-      } else if (response.data) {
-        blockedUsers = response.data;
-        sortBlockedUsers();
-      }
-
-      sock.emit('admin:getAllAdmins', (adminsResponse: any) => {
-        if (!adminsResponse.error) {
-          isSuperAdmin = true;
-          admins = adminsResponse.data;
-          sortAdmins();
+  function emit(event: string, payload?: unknown): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const handler = (first: any, second?: any) => {
+        if (first && typeof first === 'object' && 'error' in first && !second) {
+          reject(first);
+          return;
         }
-
-        sock.emit('admin:getReports', (reportsResponse: any) => {
-          if (!reportsResponse.error) {
-            reports = reportsResponse.data;
-            sortReports();
+        if (second !== undefined) {
+          if (first) {
+            reject(first);
+            return;
           }
+          resolve(second);
+          return;
+        }
+        resolve(first);
+      };
 
-          sock.emit('admin:getAppeals', (appealsResponse: any) => {
-            if (!appealsResponse.error) {
-              appeals = appealsResponse.data;
-            }
-            isLoading = false;
-          });
-        });
-      });
+      if (payload === undefined) {
+        socket.emitwithtimeout(event, handler);
+      } else {
+        socket.emitwithtimeout(event, payload, handler);
+      }
     });
   }
 
-  function sortBlockedUsers() {
+  async function loadAdminData(): Promise<void> {
+    isLoading = true;
+    error = '';
+    connectSocket();
+
+    try {
+      const blockedResponse = await emit('admin:getBlockedUsers');
+      if (blockedResponse?.error) {
+        error = 'Failed to load blocked users.';
+      } else if (blockedResponse?.data) {
+        blockedUsers = blockedResponse.data;
+        sortBlockedUsers();
+      }
+
+      const adminsResponse = await emit('admin:getAllAdmins');
+      if (!adminsResponse?.error) {
+        isSuperAdmin = true;
+        admins = adminsResponse.data;
+        sortAdmins();
+      } else {
+        isSuperAdmin = false;
+      }
+
+      isRoleKnown = true;
+      resolveRequestedTab();
+
+      const reportsResponse = await emit('admin:getReports');
+      if (!reportsResponse?.error) {
+        reports = Array.isArray(reportsResponse?.data) ? reportsResponse.data : [];
+        sortReports();
+      }
+
+      const appealsResponse = await emit('admin:getAppeals');
+      if (!appealsResponse?.error) {
+        appeals = Array.isArray(appealsResponse?.data) ? appealsResponse.data : [];
+      }
+    } catch (err) {
+      console.log(err);
+      error = 'Admin panel timed out. Check the server connection.';
+      isSuperAdmin = false;
+      isRoleKnown = true;
+      resolveRequestedTab();
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  function sortBlockedUsers(): void {
     blockedUsers = blockedUsers.sort((a, b) => b.blockedUntil - a.blockedUntil);
   }
 
-  function sortAdmins() {
+  function sortAdmins(): void {
     admins = admins.sort((a, b) => {
       if (a.role === 'superadmin' && b.role !== 'superadmin') return -1;
       if (a.role !== 'superadmin' && b.role === 'superadmin') return 1;
@@ -224,13 +341,11 @@
     });
   }
 
-  function sortReports() {
+  function sortReports(): void {
     reports = reports.sort((a, b) => {
-      // Pending reports first
       if (a.status === 'pending' && b.status !== 'pending') return -1;
       if (a.status !== 'pending' && b.status === 'pending') return 1;
-      // Then by date (newest first)
-      return b.reported_at - a.reported_at;
+      return b.created_at - a.created_at;
     });
   }
 
@@ -242,29 +357,89 @@
   $: reportCounts = {
     all: reports.length,
     pending: reports.filter((report) => report.status === 'pending').length,
-    reviewed: reports.filter((report) => report.status === 'reviewed').length,
     actioned: reports.filter((report) => report.status === 'actioned').length,
     dismissed: reports.filter((report) => report.status === 'dismissed').length,
   };
 
-  function handleUpdateReportStatus(reportId: string, newStatus: string) {
-    const sock = socket;
-    sock.emit('admin:updateReportStatus', { reportId, status: newStatus }, (response: any) => {
+  $: filteredAppeals =
+    appealStatusTab === 'all'
+      ? appeals
+      : appeals.filter((appeal) => appeal.status === appealStatusTab);
+
+  $: appealCounts = {
+    all: appeals.length,
+    pending: appeals.filter((appeal) => appeal.status === 'pending').length,
+    approved: appeals.filter((appeal) => appeal.status === 'approved').length,
+    rejected: appeals.filter((appeal) => appeal.status === 'rejected').length,
+  };
+
+  $: if (
+    filteredReports.length &&
+    !filteredReports.find((r) => getReportId(r) === selectedReportId)
+  ) {
+    selectedReportId = getReportId(filteredReports[0]);
+  }
+
+  $: if (
+    filteredAppeals.length &&
+    !filteredAppeals.find((a) => getAppealId(a) === selectedAppealId)
+  ) {
+    selectedAppealId = getAppealId(filteredAppeals[0]);
+  }
+
+  $: selectedReport = reports.find((report) => getReportId(report) === selectedReportId) || null;
+  $: selectedAppeal = appeals.find((appeal) => getAppealId(appeal) === selectedAppealId) || null;
+
+  function handleUpdateReportStatus(reportId: string, newStatus: string): void {
+    socket.emit('admin:updateReportStatus', { reportId, status: newStatus }, (response: any) => {
       if (response.success) {
-        success = `✅ ${response.message}`;
+        success = response.message || 'Report updated.';
       } else {
-        error = `❌ ${response.error || 'Failed to update report'}`;
+        error = response.error || 'Failed to update report.';
       }
     });
   }
 
-  function handleUpdateAppealStatus(appealId: string, newStatus: string) {
-    const sock = socket;
-    sock.emit('admin:updateAppealStatus', { appealId, status: newStatus }, (response: any) => {
+  function handleUpdateAppealStatus(appealId: string, newStatus: string): void {
+    socket.emit('admin:updateAppealStatus', { appealId, status: newStatus }, (response: any) => {
       if (response.success) {
-        success = `✅ ${response.message}`;
+        success = response.message || 'Appeal updated.';
       } else {
-        error = `❌ ${response.error || 'Failed to update appeal'}`;
+        error = response.error || 'Failed to update appeal.';
+      }
+    });
+  }
+
+  function handleDeleteReport(reportId: string): void {
+    const confirmed = confirm(`Delete report ${reportId}? This cannot be undone.`);
+    if (!confirmed) return;
+
+    socket.emit('admin:deleteReport', { reportId }, (response: any) => {
+      if (response.success) {
+        success = response.message || 'Report deleted.';
+        error = '';
+        if (selectedReportId === reportId) {
+          selectedReportId = '';
+        }
+      } else {
+        error = response.error || 'Failed to delete report.';
+      }
+    });
+  }
+
+  function handleDeleteAppeal(appealId: string): void {
+    const confirmed = confirm(`Delete appeal ${appealId}? This cannot be undone.`);
+    if (!confirmed) return;
+
+    socket.emit('admin:deleteAppeal', { appealId }, (response: any) => {
+      if (response.success) {
+        success = response.message || 'Appeal deleted.';
+        error = '';
+        if (selectedAppealId === appealId) {
+          selectedAppealId = '';
+        }
+      } else {
+        error = response.error || 'Failed to delete appeal.';
       }
     });
   }
@@ -279,10 +454,10 @@
     }
   }
 
-  function handleBlockFromReport(report: any) {
+  function handleBlockFromReport(report: any): void {
     const userId = report?.reported_user_id;
     if (!userId) {
-      error = '❌ Missing reported user ID';
+      error = 'Missing reported user ID.';
       return;
     }
 
@@ -293,37 +468,36 @@
     if (durationInput === null) return;
     const durationHours = Number(durationInput);
     if (!Number.isFinite(durationHours) || durationHours < 0) {
-      error = '❌ Invalid duration';
+      error = 'Invalid duration.';
       return;
     }
 
-    const sock = socket;
     const ip = getReportSenderIp(report);
-    const reason = `Reported: ${report.reason || 'Policy violation'} (report ${report.report_id})`;
+    const reason = `Reported: ${report.reason || 'Policy violation'} (report ${getReportId(report)})`;
 
-    sock.emit(
+    socket.emit(
       'admin:blockUser',
       {
         userId,
         reason,
         durationHours,
         ip,
-        reportId: report.report_id,
+        reportId: getReportId(report),
       },
       (response: any) => {
         if (response.success) {
-          success = `✅ ${response.message}`;
+          success = response.message || 'User blocked.';
           error = '';
         } else {
-          error = `❌ ${response.error || 'Failed to block user'}`;
+          error = response.error || 'Failed to block user.';
         }
       }
     );
   }
 
-  function handleBlockUser() {
+  function handleBlockUser(): void {
     if (!blockUserId.trim()) {
-      error = '❌ Please enter a user ID';
+      error = 'Please enter a user ID.';
       return;
     }
 
@@ -331,8 +505,7 @@
     error = '';
     success = '';
 
-    const sock = socket;
-    sock.emit(
+    socket.emit(
       'admin:blockUser',
       {
         userId: blockUserId,
@@ -343,48 +516,33 @@
         isSubmitting = false;
 
         if (response.success) {
-          success = `✅ ${response.message}`;
+          success = response.message || 'User blocked.';
           blockUserId = '';
           blockReason = '';
           blockDurationHours = 0;
-
-          sock.emit('admin:getBlockedUsers', (response: any) => {
-            if (response.data) {
-              blockedUsers = response.data;
-              sortBlockedUsers();
-            }
-          });
         } else {
-          error = `❌ ${response.error || 'Failed to block user'}`;
+          error = response.error || 'Failed to block user.';
         }
       }
     );
   }
 
-  function handleUnblockUser(userId: string) {
+  function handleUnblockUser(userId: string): void {
     if (!confirm(`Are you sure you want to unblock ${userId}?`)) return;
 
-    const sock = socket;
-    sock.emit('admin:unblockUser', { userId }, (response: any) => {
+    socket.emit('admin:unblockUser', { userId }, (response: any) => {
       if (response.success) {
-        success = `✅ ${response.message}`;
+        success = response.message || 'User unblocked.';
         error = '';
-
-        sock.emit('admin:getBlockedUsers', (response: any) => {
-          if (response.data) {
-            blockedUsers = response.data;
-            sortBlockedUsers();
-          }
-        });
       } else {
-        error = `❌ ${response.error || 'Failed to unblock user'}`;
+        error = response.error || 'Failed to unblock user.';
       }
     });
   }
 
-  function handleAddAdmin() {
+  function handleAddAdmin(): void {
     if (!newAdminUserId.trim()) {
-      error = '❌ Please enter a user ID';
+      error = 'Please enter a user ID.';
       return;
     }
 
@@ -392,8 +550,7 @@
     error = '';
     success = '';
 
-    const sock = socket;
-    sock.emit(
+    socket.emit(
       'admin:addAdmin',
       {
         userId: newAdminUserId,
@@ -403,61 +560,38 @@
         isSubmittingAdmin = false;
 
         if (response.success) {
-          success = `✅ ${response.message}`;
+          success = response.message || 'Admin added.';
           newAdminUserId = '';
           newAdminRole = 'moderator';
-
-          sock.emit('admin:getAllAdmins', (response: any) => {
-            if (response.data) {
-              admins = response.data;
-              sortAdmins();
-            }
-          });
         } else {
-          error = `❌ ${response.error || 'Failed to add admin'}`;
+          error = response.error || 'Failed to add admin.';
         }
       }
     );
   }
 
-  function handleRemoveAdmin(userId: string) {
+  function handleRemoveAdmin(userId: string): void {
     if (!confirm(`Are you sure you want to remove ${userId} as an admin?`)) return;
 
-    const sock = socket;
-    sock.emit('admin:removeAdmin', { userId }, (response: any) => {
+    socket.emit('admin:removeAdmin', { userId }, (response: any) => {
       if (response.success) {
-        success = `✅ ${response.message}`;
+        success = response.message || 'Admin removed.';
         error = '';
-
-        sock.emit('admin:getAllAdmins', (response: any) => {
-          if (response.data) {
-            admins = response.data;
-            sortAdmins();
-          }
-        });
       } else {
-        error = `❌ ${response.error || 'Failed to remove admin'}`;
+        error = response.error || 'Failed to remove admin.';
       }
     });
   }
 
-  function handleUpdateAdminRole(userId: string, newRole: 'superadmin' | 'moderator') {
+  function handleUpdateAdminRole(userId: string, newRole: 'superadmin' | 'moderator'): void {
     if (!confirm(`Change ${userId} to ${newRole}?`)) return;
 
-    const sock = socket;
-    sock.emit('admin:updateAdminRole', { userId, role: newRole }, (response: any) => {
+    socket.emit('admin:updateAdminRole', { userId, role: newRole }, (response: any) => {
       if (response.success) {
-        success = `✅ ${response.message}`;
+        success = response.message || 'Admin updated.';
         error = '';
-
-        sock.emit('admin:getAllAdmins', (response: any) => {
-          if (response.data) {
-            admins = response.data;
-            sortAdmins();
-          }
-        });
       } else {
-        error = `❌ ${response.error || 'Failed to update role'}`;
+        error = response.error || 'Failed to update role.';
       }
     });
   }
@@ -471,9 +605,16 @@
     return 'Expired';
   }
 
-  function formatDate(timestamp: number): string {
-    return new Date(timestamp).toLocaleString();
+  function formatDate(timestamp: any): string {
+    if (typeof timestamp === 'string') {
+      const parsed = parseInt(timestamp);
+      if (isNaN(parsed)) return timestamp;
+      timestamp = parsed;
+    }
+    const d = new Date(parseInt(timestamp));
+    return d.toLocaleString();
   }
+
   function parseConversation(report: any): Array<any> {
     if (!report?.conversation_context) return [];
     try {
@@ -484,426 +625,393 @@
       return [];
     }
   }
+
+  function parseMessageMeta(meta: string | null): Record<string, unknown> | null {
+    if (!meta) return null;
+    try {
+      const parsed = JSON.parse(meta);
+      if (parsed && typeof parsed === 'object') return parsed as Record<string, unknown>;
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  function getReportId(report: any): string {
+    return report?.report_id || report?.id || '';
+  }
+
+  function getAppealId(appeal: any): string {
+    return appeal?.appeal_id || appeal?.id || '';
+  }
+
+  function statusBadgeClass(status: string): string {
+    switch (status) {
+      case 'pending':
+        return 'bg-amber-400/20 text-amber-200 border-amber-300/40';
+      case 'actioned':
+        return 'bg-green/20 text-green border-green/50';
+      case 'dismissed':
+        return 'bg-white/10 text-muted border-white/15';
+      case 'approved':
+        return 'bg-green/20 text-green border-green/50';
+      case 'rejected':
+        return 'bg-fox/20 text-fox border-fox/50';
+      default:
+        return 'bg-white/10 text-cream border-white/20';
+    }
+  }
 </script>
 
-<div class="admin-panel relative">
-  <h1>👮 Admin Panel</h1>
-  <p class="admin-subtitle">Sensitive controls, clean signal. Keep it sharp.</p>
+<div class="relative min-h-screen overflow-hidden bg-forest text-cream font-nunito">
+  <div
+    class="pointer-events-none absolute inset-0 bg-[radial-gradient(900px_600px_at_12%_-10%,rgba(124,58,237,0.18),transparent_65%),radial-gradient(900px_520px_at_100%_0%,rgba(255,107,53,0.2),transparent_60%),linear-gradient(160deg,rgba(15,26,15,0.95),rgba(10,14,10,0.98))]"
+  ></div>
+  <div
+    class="pointer-events-none absolute -top-24 -left-20 h-72 w-72 rounded-full bg-berry/25 blur-3xl"
+  ></div>
+  <div
+    class="pointer-events-none absolute -bottom-20 -right-16 h-80 w-80 rounded-full bg-fox/25 blur-3xl"
+  ></div>
 
-  {#if !isAuthenticated}
-    <div class="login-container">
-      <div class="login-form">
-        <h2>🔐 Admin Login</h2>
-
-        {#if loginError}
-          <div class="error-message">{loginError}</div>
-        {/if}
-
-        <form on:submit|preventDefault={handleLogin}>
-          <div class="form-group">
-            <label for="username">Username</label>
-            <input
-              id="username"
-              type="text"
-              bind:value={adminUsername}
-              placeholder="Enter admin username"
-              disabled={isLoggingIn}
-              autocomplete="username"
-            />
-          </div>
-
-          <div class="form-group">
-            <label for="password">Password</label>
-            <input
-              id="password"
-              type="password"
-              bind:value={adminPassword}
-              placeholder="Enter admin password"
-              disabled={isLoggingIn}
-              autocomplete="current-password"
-            />
-          </div>
-
-          <button type="submit" disabled={isLoggingIn}>
-            {isLoggingIn ? '⏳ Logging in...' : '🔐 Login'}
+  <div class="relative mx-auto flex min-h-screen max-w-6xl flex-col px-4 pb-16 pt-10">
+    <div class="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <div class="space-y-2">
+        <div class="text-xs uppercase tracking-[0.4em] text-green/80">Control Room</div>
+        <h1 class="text-3xl font-fredoka tracking-wide text-cream md:text-4xl">Admin Grid</h1>
+        <p class="max-w-xl text-sm text-muted">
+          Real-time moderation, layered intel, and fast-response tools. Stay crisp.
+        </p>
+      </div>
+      {#if isAuthenticated}
+        <div class="flex flex-wrap items-center gap-3">
+          <span
+            class="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-cream"
+            >{currentAdminUserId}</span
+          >
+          <span
+            class={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.18em] ${
+              isSuperAdmin
+                ? 'border-amber-300/50 bg-amber-400/20 text-amber-200'
+                : 'border-green/40 bg-green/20 text-green'
+            }`}>{isSuperAdmin ? 'Superadmin' : 'Moderator'}</span
+          >
+          <button
+            class="rounded-full border border-fox/40 bg-fox/20 px-4 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-fox hover:bg-fox/30"
+            on:click={handleLogout}
+          >
+            Logout
           </button>
-        </form>
-      </div>
-    </div>
-  {:else if isLoading}
-    <div class="loading">Loading admin panel...</div>
-  {:else}
-    <div class="admin-header">
-      <div class="user-info">
-        Logged in as: <strong>{currentAdminUserId}</strong>
-        {#if isSuperAdmin}
-          <span class="badge superadmin-badge">👑 Superadmin</span>
-        {:else}
-          <span class="badge moderator-badge">🛡️ Moderator</span>
-        {/if}
-      </div>
-      <button class="logout-btn" on:click={handleLogout}>🚪 Logout</button>
-    </div>
-
-    <div class="admin-hero">
-      <div>
-        <div class="hero-title">Control Room</div>
-        <div class="hero-subtitle">Live moderation, instant actions, zero noise.</div>
-      </div>
-      <div class="hero-actions">
-        <button class="ghost-btn" on:click={() => (activeTab = 'blocked')}>Blocked</button>
-        {#if isSuperAdmin}
-          <button class="ghost-btn" on:click={() => (activeTab = 'admins')}>Admins</button>
-          <button class="ghost-btn" on:click={() => (activeTab = 'reports')}>Reports</button>
-          <button class="ghost-btn" on:click={() => (activeTab = 'appeals')}>Appeals</button>
-        {/if}
-      </div>
-    </div>
-
-    <div class="stat-grid">
-      <div class="stat-card">
-        <div class="stat-icon">🚫</div>
-        <div>
-          <div class="stat-label">Blocked Users</div>
-          <div class="stat-value">{blockedUsers.length}</div>
-        </div>
-      </div>
-      {#if isSuperAdmin}
-        <div class="stat-card">
-          <div class="stat-icon">👥</div>
-          <div>
-            <div class="stat-label">Admins</div>
-            <div class="stat-value">{admins.length}</div>
-          </div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-icon">📋</div>
-          <div>
-            <div class="stat-label">Reports</div>
-            <div class="stat-value">{reports.length}</div>
-          </div>
         </div>
       {/if}
     </div>
 
-    <div class="tabs">
-      <button
-        class="tab-btn"
-        class:active={activeTab === 'blocked'}
-        on:click={() => (activeTab = 'blocked')}
-      >
-        🚫 Blocked Users ({blockedUsers.length})
-      </button>
-      {#if isSuperAdmin}
-        <button
-          class="tab-btn"
-          class:active={activeTab === 'admins'}
-          on:click={() => (activeTab = 'admins')}
+    {#if !isAuthenticated}
+      <div class="mt-10 grid place-items-center">
+        <div
+          class="w-full max-w-md rounded-3xl border border-white/10 bg-black/40 p-8 shadow-[0_24px_60px_rgba(0,0,0,0.45)]"
         >
-          👥 Manage Admins ({admins.length})
+          <div class="text-xl font-fredoka text-cream">Admin Login</div>
+          <p class="mt-2 text-sm text-muted">Secure access for moderation staff.</p>
+
+          {#if loginError}
+            <div class="mt-4 rounded-2xl border border-fox/40 bg-fox/15 px-4 py-3 text-sm text-fox">
+              {loginError}
+            </div>
+          {/if}
+
+          <form class="mt-6 space-y-4" on:submit|preventDefault={handleLogin}>
+            <div class="space-y-2">
+              <label
+                for="admin-username"
+                class="text-xs font-bold uppercase tracking-[0.2em] text-muted">Username</label
+              >
+              <input
+                id="admin-username"
+                class="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-cream outline-none focus:border-fox/50"
+                bind:value={adminUsername}
+                placeholder="Enter admin username"
+                disabled={isLoggingIn}
+                autocomplete="username"
+              />
+            </div>
+            <div class="space-y-2">
+              <label
+                for="admin-password"
+                class="text-xs font-bold uppercase tracking-[0.2em] text-muted">Password</label
+              >
+              <input
+                id="admin-password"
+                class="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-cream outline-none focus:border-fox/50"
+                type="password"
+                bind:value={adminPassword}
+                placeholder="Enter admin password"
+                disabled={isLoggingIn}
+                autocomplete="current-password"
+              />
+            </div>
+            <button
+              class="w-full rounded-2xl bg-fox px-4 py-3 text-sm font-bold uppercase tracking-[0.2em] text-black shadow-lg shadow-fox/30"
+              type="submit"
+              disabled={isLoggingIn}
+            >
+              {isLoggingIn ? 'Logging in...' : 'Login'}
+            </button>
+          </form>
+        </div>
+      </div>
+    {:else if isLoading}
+      <div class="mt-16 text-center text-sm text-muted">Loading admin panel...</div>
+    {:else}
+      <div class="mt-8 grid gap-4 md:grid-cols-[1.2fr_1fr]">
+        <div class="rounded-3xl border border-white/10 bg-black/40 p-6">
+          <div class="text-xs uppercase tracking-[0.32em] text-green/80">Snapshot</div>
+          <div class="mt-3 text-2xl font-fredoka text-cream">Live moderation feed</div>
+          <p class="mt-2 text-sm text-muted">Rapid signal triage, auditing, and action control.</p>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div class="rounded-3xl border border-white/10 bg-black/50 p-4">
+            <div class="text-xs uppercase tracking-[0.2em] text-muted">Blocked</div>
+            <div class="mt-2 text-3xl font-fredoka text-cream">{blockedUsers.length}</div>
+          </div>
+          <div class="rounded-3xl border border-white/10 bg-black/50 p-4">
+            <div class="text-xs uppercase tracking-[0.2em] text-muted">Reports</div>
+            <div class="mt-2 text-3xl font-fredoka text-cream">{reports.length}</div>
+          </div>
+          <div class="rounded-3xl border border-white/10 bg-black/50 p-4">
+            <div class="text-xs uppercase tracking-[0.2em] text-muted">Appeals</div>
+            <div class="mt-2 text-3xl font-fredoka text-cream">{appeals.length}</div>
+          </div>
+          <div class="rounded-3xl border border-white/10 bg-black/50 p-4">
+            <div class="text-xs uppercase tracking-[0.2em] text-muted">Admins</div>
+            <div class="mt-2 text-3xl font-fredoka text-cream">{admins.length}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-8 flex flex-wrap gap-3">
+        <button
+          class={`rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition ${
+            activeTab === 'reports'
+              ? 'border-fox/60 bg-fox/25 text-fox'
+              : 'border-white/10 bg-black/40 text-muted hover:border-white/30'
+          }`}
+          on:click={() => applyTab('reports')}
+          disabled={!isSuperAdmin && isRoleKnown}
+        >
+          Reports
         </button>
         <button
-          class="tab-btn"
-          class:active={activeTab === 'reports'}
-          on:click={() => (activeTab = 'reports')}
+          class={`rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition ${
+            activeTab === 'appeals'
+              ? 'border-green/60 bg-green/20 text-green'
+              : 'border-white/10 bg-black/40 text-muted hover:border-white/30'
+          }`}
+          on:click={() => applyTab('appeals')}
+          disabled={!isSuperAdmin && isRoleKnown}
         >
-          📋 Reports ({reports.length})
+          Appeals
         </button>
         <button
-          class="tab-btn"
-          class:active={activeTab === 'appeals'}
-          on:click={() => (activeTab = 'appeals')}
+          class={`rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition ${
+            activeTab === 'blocked'
+              ? 'border-amber-300/60 bg-amber-400/20 text-amber-200'
+              : 'border-white/10 bg-black/40 text-muted hover:border-white/30'
+          }`}
+          on:click={() => applyTab('blocked')}
         >
-          📝 Appeals ({appeals.length})
+          Blocked
         </button>
+        {#if isSuperAdmin}
+          <button
+            class={`rounded-full border px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] transition ${
+              activeTab === 'admins'
+                ? 'border-berry/60 bg-berry/20 text-berry-lt'
+                : 'border-white/10 bg-black/40 text-muted hover:border-white/30'
+            }`}
+            on:click={() => applyTab('admins')}
+          >
+            Manage Admins
+          </button>
+        {/if}
+      </div>
+
+      {#if error}
+        <div class="mt-6 rounded-2xl border border-fox/40 bg-fox/15 px-4 py-3 text-sm text-fox">
+          {error}
+        </div>
       {/if}
-    </div>
-
-    {#if error}
-      <div class="error-message">{error}</div>
-    {/if}
-
-    {#if success}
-      <div class="success-message">{success}</div>
-    {/if}
-
-    {#if activeTab === 'blocked'}
-      <div class="section-grid">
-        <div class="section">
-          <h2>🚫 Block a User</h2>
-
-          <form on:submit|preventDefault={handleBlockUser}>
-            <div class="form-group">
-              <label for="userId">User ID</label>
-              <input
-                id="userId"
-                type="text"
-                bind:value={blockUserId}
-                placeholder="Enter user ID to block"
-                disabled={isSubmitting}
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="reason">Reason (optional)</label>
-              <textarea
-                id="reason"
-                bind:value={blockReason}
-                placeholder="Why are you blocking this user?"
-                disabled={isSubmitting}
-                rows="3"
-              ></textarea>
-            </div>
-
-            <div class="form-group">
-              <label for="duration">Duration (hours, 0 = permanent)</label>
-              <input
-                id="duration"
-                type="number"
-                bind:value={blockDurationHours}
-                min="0"
-                step="1"
-                disabled={isSubmitting}
-              />
-            </div>
-
-            <button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? '⏳ Processing...' : '🚫 Block User'}
-            </button>
-          </form>
+      {#if success}
+        <div
+          class="mt-6 rounded-2xl border border-green/40 bg-green/15 px-4 py-3 text-sm text-green"
+        >
+          {success}
         </div>
+      {/if}
 
-        <div class="section">
-          <h2>📋 Blocked Users ({blockedUsers.length})</h2>
-
-          {#if blockedUsers.length === 0}
-            <p class="no-data">No blocked users</p>
-          {:else}
-            <div class="blocked-users-list">
-              {#each blockedUsers as user (user.userId)}
-                <div class="user-card">
-                  <div class="user-info">
-                    <div class="user-id">{user.userId}</div>
-                    <div class="user-reason">{user.reason}</div>
-                    <div class="user-details">
-                      {#if user.isPermanent}
-                        <span class="badge permanent">🔒 Permanent</span>
-                      {:else}
-                        <span class="badge temporary"
-                          >⏱️ {formatTimeRemaining(user.timeRemaining)}</span
-                        >
-                      {/if}
-                      <span class="timestamp">Blocked: {formatDate(user.blockedUntil)}</span>
-                    </div>
-                  </div>
-                  <button class="unblock-btn" on:click={() => handleUnblockUser(user.userId)}>
-                    ↩️ Unblock
-                  </button>
-                </div>
+      {#if activeTab === 'reports' && isSuperAdmin}
+        <section class="mt-8 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="text-xs uppercase tracking-[0.32em] text-muted">Reports</div>
+              <div class="text-xl font-fredoka text-cream">User reports</div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              {#each ['pending', 'actioned', 'dismissed', 'all'] as tab}
+                <button
+                  class={`rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.16em] ${
+                    reportStatusTab === tab
+                      ? 'border-green/50 bg-green/20 text-green'
+                      : 'border-white/10 bg-black/40 text-muted hover:border-white/30'
+                  }`}
+                  on:click={() => (reportStatusTab = tab as ReportStatusTab)}
+                >
+                  {tab} ({reportCounts[tab as keyof typeof reportCounts] || 0})
+                </button>
               {/each}
             </div>
-          {/if}
-        </div>
-      </div>
-    {/if}
+          </div>
 
-    {#if activeTab === 'admins' && isSuperAdmin}
-      <div class="section-grid">
-        <div class="section">
-          <h2>➕ Add Admin</h2>
-
-          <form on:submit|preventDefault={handleAddAdmin}>
-            <div class="form-group">
-              <label for="adminUserId">User ID</label>
-              <input
-                id="adminUserId"
-                type="text"
-                bind:value={newAdminUserId}
-                placeholder="Enter user ID to make admin"
-                disabled={isSubmittingAdmin}
-              />
-            </div>
-
-            <div class="form-group">
-              <label for="adminRole">Role</label>
-              <select id="adminRole" bind:value={newAdminRole} disabled={isSubmittingAdmin}>
-                <option value="moderator">Moderator</option>
-                <option value="superadmin">Superadmin</option>
-              </select>
-            </div>
-
-            <button type="submit" disabled={isSubmittingAdmin}>
-              {isSubmittingAdmin ? '⏳ Processing...' : '➕ Add Admin'}
-            </button>
-          </form>
-        </div>
-
-        <div class="section">
-          <h2>👥 Current Admins ({admins.length})</h2>
-
-          {#if admins.length === 0}
-            <p class="no-data">No admins yet</p>
-          {:else}
-            <div class="admins-list">
-              {#each admins as admin (admin.userId)}
-                <div class="admin-card">
-                  <div class="admin-info">
-                    <div class="admin-id">{admin.userId}</div>
-                    <div class="admin-role">
-                      {#if admin.role === 'superadmin'}
-                        <span class="badge role-superadmin">👑 Superadmin</span>
-                      {:else}
-                        <span class="badge role-moderator">🛡️ Moderator</span>
-                      {/if}
-                    </div>
-                    <div class="admin-details">
-                      <span class="timestamp">Added: {formatDate(admin.createdAt)}</span>
-                      {#if admin.createdBy}
-                        <span class="timestamp">By: {admin.createdBy}</span>
-                      {/if}
-                    </div>
-                  </div>
-                  <div class="admin-actions">
-                    {#if admin.role === 'moderator'}
-                      <button
-                        class="promote-btn"
-                        on:click={() => handleUpdateAdminRole(admin.userId, 'superadmin')}
-                      >
-                        ⬆️ Promote
-                      </button>
-                    {:else}
-                      <button
-                        class="demote-btn"
-                        on:click={() => handleUpdateAdminRole(admin.userId, 'moderator')}
-                      >
-                        ⬇️ Demote
-                      </button>
-                    {/if}
-                    <button class="remove-btn" on:click={() => handleRemoveAdmin(admin.userId)}>
-                      ❌ Remove
-                    </button>
-                  </div>
+          <div class="grid gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
+            <div class="rounded-3xl border border-white/10 bg-black/40 p-4">
+              {#if filteredReports.length === 0}
+                <div
+                  class="rounded-2xl border border-dashed border-white/20 p-6 text-center text-sm text-muted"
+                >
+                  No reports in this filter.
                 </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-      </div>
-    {/if}
-
-    {#if activeTab === 'reports' && isSuperAdmin}
-      <div class="section">
-        <h2>📋 User Reports ({reports.length})</h2>
-
-        <div class="report-tabs">
-          <button
-            class="report-tab-btn"
-            class:active={reportStatusTab === 'pending'}
-            on:click={() => (reportStatusTab = 'pending')}
-          >
-            Pending ({reportCounts.pending})
-          </button>
-          <button
-            class="report-tab-btn"
-            class:active={reportStatusTab === 'reviewed'}
-            on:click={() => (reportStatusTab = 'reviewed')}
-          >
-            Reviewed ({reportCounts.reviewed})
-          </button>
-          <button
-            class="report-tab-btn"
-            class:active={reportStatusTab === 'actioned'}
-            on:click={() => (reportStatusTab = 'actioned')}
-          >
-            Actioned ({reportCounts.actioned})
-          </button>
-          <button
-            class="report-tab-btn"
-            class:active={reportStatusTab === 'dismissed'}
-            on:click={() => (reportStatusTab = 'dismissed')}
-          >
-            Dismissed ({reportCounts.dismissed})
-          </button>
-          <button
-            class="report-tab-btn"
-            class:active={reportStatusTab === 'all'}
-            on:click={() => (reportStatusTab = 'all')}
-          >
-            All ({reportCounts.all})
-          </button>
-        </div>
-
-        {#if filteredReports.length === 0}
-          <p class="no-data">No reports in this status</p>
-        {:else}
-          <div class="reports-list">
-            {#each filteredReports as report (report.id)}
-              <details class="report-item">
-                <summary class="report-summary">
-                  <div class="report-summary-left">
-                    <span class={`status-badge status-${report.status}`}
-                      >{report.status.toUpperCase()}</span
+              {:else}
+                <div class="space-y-3">
+                  {#each filteredReports as report (getReportId(report))}
+                    <button
+                      class={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                        selectedReportId === getReportId(report)
+                          ? 'border-fox/60 bg-fox/15'
+                          : 'border-white/10 bg-black/40 hover:border-white/30'
+                      }`}
+                      on:click={() => (selectedReportId = getReportId(report))}
                     >
-                    <div class="report-title">Report #{report.id}</div>
-                  </div>
-                  <div class="report-summary-right">
-                    <div class="report-time">{formatDate(report.reported_at)}</div>
-                    <div class="report-target">{report.reported_user_id}</div>
-                  </div>
-                </summary>
+                      <div class="flex items-center justify-between">
+                        <span
+                          class={`rounded-full border px-2 py-1 text-[0.6rem] font-bold uppercase tracking-[0.2em] ${statusBadgeClass(
+                            report.status
+                          )}`}>{report.status}</span
+                        >
+                        <span class="text-xs text-muted">{formatDate(report.created_at)}</span>
+                      </div>
+                      <div class="mt-2 text-sm font-semibold text-cream">
+                        {report.reported_user_id || 'Unknown user'}
+                      </div>
+                      <div class="mt-1 text-xs text-muted">Report #{getReportId(report)}</div>
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
 
-                <div class="report-detail">
-                  <div class="report-content">
-                    <div class="report-section">
-                      <span class="report-label">Reporter:</span>
-                      <span class="report-value">{report.reporter_id}</span>
+            <div class="rounded-3xl border border-white/10 bg-black/40 p-6">
+              {#if !selectedReport}
+                <div
+                  class="rounded-2xl border border-dashed border-white/20 p-6 text-center text-sm text-muted"
+                >
+                  Select a report to inspect details.
+                </div>
+              {:else}
+                <div class="space-y-6">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div class="text-xs uppercase tracking-[0.2em] text-muted">Report</div>
+                      <div class="text-xl font-fredoka text-cream">
+                        #{getReportId(selectedReport)}
+                      </div>
                     </div>
-                    <div class="report-section">
-                      <span class="report-label">Reported User:</span>
-                      <span class="report-value">{report.reported_user_id}</span>
+                    <span
+                      class={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] ${statusBadgeClass(
+                        selectedReport.status
+                      )}`}>{selectedReport.status}</span
+                    >
+                  </div>
+
+                  <div class="grid gap-4 md:grid-cols-2">
+                    <div class="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm">
+                      <div class="text-xs uppercase tracking-[0.2em] text-muted">Reporter</div>
+                      <div class="mt-2 text-cream">{selectedReport.reporter_id}</div>
                     </div>
-                    <div class="report-section">
-                      <span class="report-label">Chat ID:</span>
-                      <span class="report-value report-code">{report.chat_id}</span>
+                    <div class="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm">
+                      <div class="text-xs uppercase tracking-[0.2em] text-muted">Reported user</div>
+                      <div class="mt-2 text-cream">{selectedReport.reported_user_id}</div>
                     </div>
-                    <div class="report-section">
-                      <span class="report-label">Reason:</span>
-                      <div class="report-reason">{report.reason}</div>
+                    <div class="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm">
+                      <div class="text-xs uppercase tracking-[0.2em] text-muted">Chat ID</div>
+                      <div class="mt-2 break-all text-cream">{selectedReport.chat_id}</div>
                     </div>
-                    <div class="report-section">
-                      <span class="report-label">Message:</span>
-                      <div class="report-message">{report.message_text}</div>
+                    <div class="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm">
+                      <div class="text-xs uppercase tracking-[0.2em] text-muted">Reported at</div>
+                      <div class="mt-2 text-cream">{formatDate(selectedReport.created_at)}</div>
                     </div>
                   </div>
 
-                  <div class="conversation-block">
-                    <div class="conversation-title">Conversation</div>
-                    {#if parseConversation(report).length === 0}
-                      <div class="conversation-empty">No conversation stored</div>
+                  <div class="grid gap-4 md:grid-cols-2">
+                    <div class="rounded-2xl border border-amber-300/30 bg-amber-400/10 p-4 text-sm">
+                      <div class="text-xs uppercase tracking-[0.2em] text-amber-200">Reason</div>
+                      <div class="mt-2 text-cream">{selectedReport.reason}</div>
+                    </div>
+                    <div class="rounded-2xl border border-fox/30 bg-fox/10 p-4 text-sm">
+                      <div class="text-xs uppercase tracking-[0.2em] text-fox">
+                        Reported message
+                      </div>
+                      <div class="mt-2 text-cream">{selectedReport.message_text}</div>
+                    </div>
+                  </div>
+
+                  <div class="rounded-3xl border border-white/10 bg-black/60 p-4">
+                    <div class="text-xs uppercase tracking-[0.2em] text-muted">Conversation</div>
+                    {#if parseConversation(selectedReport).length === 0}
+                      <div class="mt-4 text-sm text-muted">No conversation stored.</div>
                     {:else}
-                      <div class="conversation-list">
-                        {#each parseConversation(report) as entry (entry.index)}
+                      <div class="mt-4 flex max-h-72 flex-col gap-4 overflow-y-auto pr-2">
+                        {#each parseConversation(selectedReport) as entry (entry.index)}
+                          {@const isReported = entry.senderId === selectedReport.reported_user_id}
+                          {@const isFlagged =
+                            !!selectedReport.message_text &&
+                            !!entry.text &&
+                            entry.text === selectedReport.message_text}
                           <div
-                            class={`conversation-row ${entry.senderId === report.reported_user_id ? 'conversation-row-reported' : 'conversation-row-other'}`}
+                            class={`flex flex-col gap-1 ${isReported ? 'items-start' : 'items-end'}`}
                           >
-                            <div class="conversation-meta">
-                              <span class="conversation-sender">
-                                {entry.senderId || 'unknown'}
-                              </span>
-                              <span class="conversation-sender">
-                                {entry.text || 'unknown'}
-                              </span>
-                              <span class="conversation-time">
-                                {entry.sentAt ? formatDate(entry.sentAt) : 'unknown time'}
-                              </span>
+                            <div
+                              class="flex flex-wrap items-center gap-2 text-[0.65rem] uppercase tracking-[0.2em] text-muted"
+                            >
+                              <span>{entry.sentAt ? formatDate(entry.sentAt) : 'unknown time'}</span
+                              >
                             </div>
                             <div
-                              class={`conversation-bubble ${entry.senderId === report.reported_user_id ? 'conversation-bubble-reported' : 'conversation-bubble-other'}`}
+                              class={`max-w-[85%] rounded-2xl border px-3 py-2 text-sm ${
+                                isReported
+                                  ? 'border-fox/40 bg-fox/20 text-cream'
+                                  : 'border-white/10 bg-black/50 text-cream'
+                              } ${isFlagged ? 'ring-1 ring-red-500 ml-1' : ''}`}
                             >
-                              <span class="conversation-type">{entry.type || 'unknown'}</span>
-                              <span class="conversation-text">
+                              <div class="text-[0.6rem] uppercase tracking-[0.2em] text-muted">
+                                {entry.type || 'message'}
+                              </div>
+                              {#if entry.replyTo}
+                                <div
+                                  class="mt-1 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-[0.65rem] text-muted"
+                                >
+                                  Reply to: {entry.replyTo}
+                                </div>
+                              {/if}
+                              {#if entry.reaction}
+                                <div
+                                  class="mt-1 rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-[0.65rem] text-muted"
+                                >
+                                  Reaction: {entry.reaction}
+                                </div>
+                              {/if}
+                              <div class="mt-1">
                                 {entry.text || entry.stickerId || entry.reaction || ''}
-                              </span>
+                              </div>
                             </div>
                           </div>
                         {/each}
@@ -911,1090 +1019,493 @@
                     {/if}
                   </div>
 
-                  {#if report.message_meta}
-                    <details class="report-details">
-                      <summary class="report-label">Message Metadata</summary>
-                      <pre class="report-meta-content">{report.message_meta}</pre>
-                    </details>
-                  {/if}
-
-                  {#if report.status === 'pending'}
-                    <div class="report-actions">
-                      <button
-                        class="action-btn btn-reviewed"
-                        on:click={() => handleUpdateReportStatus(report.report_id, 'reviewed')}
-                      >
-                        ✓ Mark Reviewed
-                      </button>
-                      <button
-                        class="action-btn btn-block"
-                        on:click={() => handleBlockFromReport(report)}
-                      >
-                        🚫 Block User
-                      </button>
-                      <button
-                        class="action-btn btn-actioned"
-                        on:click={() => handleUpdateReportStatus(report.report_id, 'actioned')}
-                      >
-                        ⚡ Action Taken
-                      </button>
-                      <button
-                        class="action-btn btn-dismissed"
-                        on:click={() => handleUpdateReportStatus(report.report_id, 'dismissed')}
-                      >
-                        ✕ Dismiss
-                      </button>
+                  {#if selectedReport.message_meta}
+                    {@const meta = parseMessageMeta(selectedReport.message_meta)}
+                    <div class="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm">
+                      <div class="text-xs font-bold uppercase tracking-[0.2em] text-muted">
+                        Message metadata
+                      </div>
+                      {#if meta}
+                        <div class="mt-4 grid gap-3 md:grid-cols-2">
+                          <div class="rounded-xl border border-white/10 bg-black/60 p-3">
+                            <div class="text-[0.6rem] uppercase tracking-[0.2em] text-muted">
+                              Chat ID
+                            </div>
+                            <div class="mt-2 break-all text-cream">{meta.chatId || 'Unknown'}</div>
+                          </div>
+                          <div class="rounded-xl border border-white/10 bg-black/60 p-3">
+                            <div class="text-[0.6rem] uppercase tracking-[0.2em] text-muted">
+                              Message ID
+                            </div>
+                            <div class="mt-2 break-all text-cream">
+                              {meta.messageId || 'Unknown'}
+                            </div>
+                          </div>
+                          <div class="rounded-xl border border-white/10 bg-black/60 p-3">
+                            <div class="text-[0.6rem] uppercase tracking-[0.2em] text-muted">
+                              Sender ID
+                            </div>
+                            <div class="mt-2 break-all text-cream">
+                              {meta.senderId || 'Unknown'}
+                            </div>
+                          </div>
+                          <div class="rounded-xl border border-white/10 bg-black/60 p-3">
+                            <div class="text-[0.6rem] uppercase tracking-[0.2em] text-muted">
+                              Sender IP
+                            </div>
+                            <div class="mt-2 break-all text-cream">
+                              {meta.senderIp || 'Unknown'}
+                            </div>
+                          </div>
+                          <div
+                            class="rounded-xl border border-white/10 bg-black/60 p-3 md:col-span-2"
+                          >
+                            <div class="text-[0.6rem] uppercase tracking-[0.2em] text-muted">
+                              User Agent
+                            </div>
+                            <div class="mt-2 break-all text-cream">
+                              {meta.userAgent || 'Unknown'}
+                            </div>
+                          </div>
+                          <div class="rounded-xl border border-white/10 bg-black/60 p-3">
+                            <div class="text-[0.6rem] uppercase tracking-[0.2em] text-muted">
+                              Sent At
+                            </div>
+                            <div class="mt-2 text-cream">
+                              {meta.sentAt ? formatDate(meta.sentAt) : 'Unknown'}
+                            </div>
+                          </div>
+                          <div class="rounded-xl border border-white/10 bg-black/60 p-3">
+                            <div class="text-[0.6rem] uppercase tracking-[0.2em] text-muted">
+                              Type
+                            </div>
+                            <div class="mt-2 text-cream">{meta.type || 'Unknown'}</div>
+                          </div>
+                          <div class="rounded-xl border border-white/10 bg-black/60 p-3">
+                            <div class="text-[0.6rem] uppercase tracking-[0.2em] text-muted">
+                              Reply To
+                            </div>
+                            <div class="mt-2 break-all text-cream">
+                              {meta.replyTo || 'None'}
+                            </div>
+                          </div>
+                          <div
+                            class="rounded-xl border border-white/10 bg-black/60 p-3 md:col-span-2"
+                          >
+                            <div class="text-[0.6rem] uppercase tracking-[0.2em] text-muted">
+                              Text
+                            </div>
+                            <div class="mt-2 text-cream">{meta.text || ''}</div>
+                          </div>
+                        </div>
+                      {:else}
+                        <div
+                          class="mt-3 rounded-xl border border-white/10 bg-black/60 p-3 text-xs text-muted"
+                        >
+                          {selectedReport.message_meta}
+                        </div>
+                      {/if}
                     </div>
                   {/if}
-                </div>
-              </details>
-            {/each}
-          </div>
-        {/if}
-      </div>
-    {/if}
 
-    {#if activeTab === 'appeals' && isSuperAdmin}
-      <div class="section">
-        <h2>📝 Appeals ({appeals.length})</h2>
-
-        {#if appeals.length === 0}
-          <p class="no-data">No appeals yet</p>
-        {:else}
-          <div class="reports-list">
-            {#each appeals as appeal (appeal.id)}
-              <div class="report-item">
-                <div class="report-summary">
-                  <div class="report-summary-left">
-                    <span class={`status-badge status-${appeal.status}`}
-                      >{appeal.status.toUpperCase()}</span
+                  <div class="flex flex-wrap justify-end gap-3">
+                    {#if selectedReport.status === 'pending' || selectedReport.status === 'dismissed'}
+                      <button
+                        class="rounded-full border border-fox/40 bg-fox/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-fox"
+                        on:click={() => handleBlockFromReport(selectedReport)}
+                      >
+                        Block user
+                      </button>
+                    {/if}
+                    {#if selectedReport.status === 'pending'}
+                      <button
+                        class="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-muted"
+                        on:click={() =>
+                          handleUpdateReportStatus(getReportId(selectedReport), 'dismissed')}
+                      >
+                        Dismiss
+                      </button>
+                    {/if}
+                    <button
+                      class="rounded-full border border-red-400/50 bg-red-500/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-red-200"
+                      on:click={() => handleDeleteReport(getReportId(selectedReport))}
                     >
-                    <div class="report-title">Appeal #{appeal.id}</div>
-                  </div>
-                  <div class="report-summary-right">
-                    <div class="report-time">{formatDate(appeal.created_at)}</div>
-                    <div class="report-target">{appeal.user_id}</div>
+                      Delete
+                    </button>
                   </div>
                 </div>
+              {/if}
+            </div>
+          </div>
+        </section>
+      {/if}
 
-                <div class="report-detail">
-                  <div class="report-content">
-                    <div class="report-section">
-                      <span class="report-label">User:</span>
-                      <span class="report-value">{appeal.user_id}</span>
-                    </div>
-                    {#if appeal.report_id}
-                      <div class="report-section">
-                        <span class="report-label">Report:</span>
-                        <span class="report-value report-code">{appeal.report_id}</span>
+      {#if activeTab === 'appeals' && isSuperAdmin}
+        <section class="mt-8 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div class="text-xs uppercase tracking-[0.32em] text-muted">Appeals</div>
+              <div class="text-xl font-fredoka text-cream">Appeal queue</div>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              {#each ['pending', 'approved', 'rejected', 'all'] as tab}
+                <button
+                  class={`rounded-full border px-3 py-1.5 text-xs font-bold uppercase tracking-[0.16em] ${
+                    appealStatusTab === tab
+                      ? 'border-amber-300/50 bg-amber-400/20 text-amber-200'
+                      : 'border-white/10 bg-black/40 text-muted hover:border-white/30'
+                  }`}
+                  on:click={() => (appealStatusTab = tab as AppealStatusTab)}
+                >
+                  {tab} ({appealCounts[tab as keyof typeof appealCounts] || 0})
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="grid gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
+            <div class="rounded-3xl border border-white/10 bg-black/40 p-4">
+              {#if filteredAppeals.length === 0}
+                <div
+                  class="rounded-2xl border border-dashed border-white/20 p-6 text-center text-sm text-muted"
+                >
+                  No appeals in this filter.
+                </div>
+              {:else}
+                <div class="space-y-3">
+                  {#each filteredAppeals as appeal (getAppealId(appeal))}
+                    <button
+                      class={`w-full rounded-2xl border px-4 py-3 text-left transition ${
+                        selectedAppealId === getAppealId(appeal)
+                          ? 'border-green/60 bg-green/15'
+                          : 'border-white/10 bg-black/40 hover:border-white/30'
+                      }`}
+                      on:click={() => (selectedAppealId = getAppealId(appeal))}
+                    >
+                      <div class="flex items-center justify-between">
+                        <span
+                          class={`rounded-full border px-2 py-1 text-[0.6rem] font-bold uppercase tracking-[0.2em] ${statusBadgeClass(
+                            appeal.status
+                          )}`}>{appeal.status}</span
+                        >
+                        <span class="text-xs text-muted">{formatDate(appeal.created_at)}</span>
                       </div>
-                    {/if}
-                    <div class="report-section">
-                      <span class="report-label">Reason:</span>
-                      <div class="report-reason">{appeal.reason}</div>
+                      <div class="mt-2 text-sm font-semibold text-cream">
+                        {appeal.user_id || 'Unknown user'}
+                      </div>
+                      <div class="mt-1 text-xs text-muted">Appeal #{getAppealId(appeal)}</div>
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
+            <div class="rounded-3xl border border-white/10 bg-black/40 p-6">
+              {#if !selectedAppeal}
+                <div
+                  class="rounded-2xl border border-dashed border-white/20 p-6 text-center text-sm text-muted"
+                >
+                  Select an appeal to inspect details.
+                </div>
+              {:else}
+                <div class="space-y-6">
+                  <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <div class="text-xs uppercase tracking-[0.2em] text-muted">Appeal</div>
+                      <div class="text-xl font-fredoka text-cream">
+                        #{getAppealId(selectedAppeal)}
+                      </div>
                     </div>
-                    {#if appeal.message}
-                      <div class="report-section">
-                        <span class="report-label">Message:</span>
-                        <div class="report-message">{appeal.message}</div>
+                    <span
+                      class={`rounded-full border px-3 py-1 text-xs font-bold uppercase tracking-[0.2em] ${statusBadgeClass(
+                        selectedAppeal.status
+                      )}`}>{selectedAppeal.status}</span
+                    >
+                  </div>
+
+                  <div class="grid gap-4 md:grid-cols-2">
+                    <div class="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm">
+                      <div class="text-xs uppercase tracking-[0.2em] text-muted">User</div>
+                      <div class="mt-2 text-cream">{selectedAppeal.user_id}</div>
+                    </div>
+                    <div class="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm">
+                      <div class="text-xs uppercase tracking-[0.2em] text-muted">Created</div>
+                      <div class="mt-2 text-cream">{formatDate(selectedAppeal.created_at)}</div>
+                    </div>
+                    {#if selectedAppeal.report_id}
+                      <div class="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm">
+                        <div class="text-xs uppercase tracking-[0.2em] text-muted">Report</div>
+                        <div class="mt-2 break-all text-cream">{selectedAppeal.report_id}</div>
                       </div>
                     {/if}
                   </div>
 
-                  {#if appeal.status === 'pending'}
-                    <div class="report-actions">
-                      <button
-                        class="action-btn btn-actioned"
-                        on:click={() => handleUpdateAppealStatus(appeal.appeal_id, 'approved')}
-                      >
-                        ✓ Approve
-                      </button>
-                      <button
-                        class="action-btn btn-dismissed"
-                        on:click={() => handleUpdateAppealStatus(appeal.appeal_id, 'rejected')}
-                      >
-                        ✕ Reject
-                      </button>
+                  <div class="rounded-2xl border border-amber-300/30 bg-amber-400/10 p-4 text-sm">
+                    <div class="text-xs uppercase tracking-[0.2em] text-amber-200">Reason</div>
+                    <div class="mt-2 text-cream">{selectedAppeal.reason}</div>
+                  </div>
+                  {#if selectedAppeal.message}
+                    <div class="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm">
+                      <div class="text-xs uppercase tracking-[0.2em] text-muted">Message</div>
+                      <div class="mt-2 text-cream">{selectedAppeal.message}</div>
                     </div>
                   {/if}
+
+                  <div class="flex flex-wrap justify-end gap-3">
+                    {#if selectedAppeal.status !== 'approved'}
+                      <button
+                        class="rounded-full border border-green/50 bg-green/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-green"
+                        on:click={() =>
+                          handleUpdateAppealStatus(getAppealId(selectedAppeal), 'approved')}
+                      >
+                        Approve
+                      </button>
+                    {/if}
+                    {#if selectedAppeal.status === 'pending'}
+                      <button
+                        class="rounded-full border border-fox/40 bg-fox/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-fox"
+                        on:click={() =>
+                          handleUpdateAppealStatus(getAppealId(selectedAppeal), 'rejected')}
+                      >
+                        Reject
+                      </button>
+                    {/if}
+                    <button
+                      class="rounded-full border border-red-400/50 bg-red-500/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-red-200"
+                      on:click={() => handleDeleteAppeal(getAppealId(selectedAppeal))}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
-              </div>
-            {/each}
+              {/if}
+            </div>
           </div>
-        {/if}
-      </div>
+        </section>
+      {/if}
+
+      {#if activeTab === 'blocked'}
+        <section class="mt-8 grid gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
+          <div class="rounded-3xl border border-white/10 bg-black/40 p-6">
+            <div class="text-xs uppercase tracking-[0.32em] text-muted">Block user</div>
+            <div class="mt-2 text-xl font-fredoka text-cream">Manual block</div>
+            <form class="mt-6 space-y-4" on:submit|preventDefault={handleBlockUser}>
+              <div class="space-y-2">
+                <label
+                  for="block-user-id"
+                  class="text-xs font-bold uppercase tracking-[0.2em] text-muted">User ID</label
+                >
+                <input
+                  id="block-user-id"
+                  class="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-cream outline-none focus:border-amber-300/50"
+                  bind:value={blockUserId}
+                  placeholder="Enter user ID"
+                  disabled={isSubmitting}
+                />
+              </div>
+              <div class="space-y-2">
+                <label
+                  for="block-reason"
+                  class="text-xs font-bold uppercase tracking-[0.2em] text-muted">Reason</label
+                >
+                <textarea
+                  id="block-reason"
+                  class="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-cream outline-none focus:border-amber-300/50"
+                  bind:value={blockReason}
+                  rows="3"
+                  placeholder="Why are they being blocked?"
+                  disabled={isSubmitting}
+                ></textarea>
+              </div>
+              <div class="space-y-2">
+                <label
+                  for="block-duration"
+                  class="text-xs font-bold uppercase tracking-[0.2em] text-muted">Duration</label
+                >
+                <input
+                  id="block-duration"
+                  class="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-cream outline-none focus:border-amber-300/50"
+                  type="number"
+                  min="0"
+                  step="1"
+                  bind:value={blockDurationHours}
+                  disabled={isSubmitting}
+                />
+                <div class="text-xs text-muted">0 means permanent block.</div>
+              </div>
+              <button
+                class="w-full rounded-2xl bg-amber-400 px-4 py-3 text-sm font-bold uppercase tracking-[0.2em] text-black"
+                type="submit"
+                disabled={isSubmitting}
+              >
+                {isSubmitting ? 'Blocking...' : 'Block user'}
+              </button>
+            </form>
+          </div>
+
+          <div class="rounded-3xl border border-white/10 bg-black/40 p-6">
+            <div class="text-xs uppercase tracking-[0.32em] text-muted">Blocked users</div>
+            <div class="mt-2 text-xl font-fredoka text-cream">Current list</div>
+
+            {#if blockedUsers.length === 0}
+              <div
+                class="mt-6 rounded-2xl border border-dashed border-white/20 p-6 text-center text-sm text-muted"
+              >
+                No blocked users.
+              </div>
+            {:else}
+              <div class="mt-6 space-y-4">
+                {#each blockedUsers as user (user.userId)}
+                  <div class="rounded-2xl border border-white/10 bg-black/50 p-4">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div class="text-sm font-semibold text-cream">{user.userId}</div>
+                        <div class="mt-1 text-sm text-muted">{user.reason}</div>
+                        <div class="mt-3 flex flex-wrap gap-2 text-xs">
+                          {#if user.isPermanent}
+                            <span
+                              class="rounded-full border border-fox/40 bg-fox/20 px-2 py-1 text-fox"
+                              >Permanent</span
+                            >
+                          {:else}
+                            <span
+                              class="rounded-full border border-amber-300/40 bg-amber-400/20 px-2 py-1 text-amber-200"
+                              >{formatTimeRemaining(user.timeRemaining)}</span
+                            >
+                          {/if}
+                          <span
+                            class="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-muted"
+                            >Blocked: {formatDate(user.blockedUntil)}</span
+                          >
+                        </div>
+                      </div>
+                      <button
+                        class="rounded-full border border-green/40 bg-green/20 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-green"
+                        on:click={() => handleUnblockUser(user.userId)}
+                      >
+                        Unblock
+                      </button>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        </section>
+      {/if}
+
+      {#if activeTab === 'admins' && isSuperAdmin}
+        <section class="mt-8 grid gap-6 lg:grid-cols-[minmax(0,320px)_1fr]">
+          <div class="rounded-3xl border border-white/10 bg-black/40 p-6">
+            <div class="text-xs uppercase tracking-[0.32em] text-muted">Add admin</div>
+            <div class="mt-2 text-xl font-fredoka text-cream">Invite control</div>
+            <form class="mt-6 space-y-4" on:submit|preventDefault={handleAddAdmin}>
+              <div class="space-y-2">
+                <label
+                  for="new-admin-user-id"
+                  class="text-xs font-bold uppercase tracking-[0.2em] text-muted">User ID</label
+                >
+                <input
+                  id="new-admin-user-id"
+                  class="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-cream outline-none focus:border-berry/50"
+                  bind:value={newAdminUserId}
+                  placeholder="User ID"
+                  disabled={isSubmittingAdmin}
+                />
+              </div>
+              <div class="space-y-2">
+                <label
+                  for="new-admin-role"
+                  class="text-xs font-bold uppercase tracking-[0.2em] text-muted">Role</label
+                >
+                <select
+                  id="new-admin-role"
+                  class="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-sm text-cream outline-none focus:border-berry/50"
+                  bind:value={newAdminRole}
+                  disabled={isSubmittingAdmin}
+                >
+                  <option value="moderator">Moderator</option>
+                  <option value="superadmin">Superadmin</option>
+                </select>
+              </div>
+              <button
+                class="w-full rounded-2xl bg-berry px-4 py-3 text-sm font-bold uppercase tracking-[0.2em] text-cream"
+                type="submit"
+                disabled={isSubmittingAdmin}
+              >
+                {isSubmittingAdmin ? 'Adding...' : 'Add admin'}
+              </button>
+            </form>
+          </div>
+
+          <div class="rounded-3xl border border-white/10 bg-black/40 p-6">
+            <div class="text-xs uppercase tracking-[0.32em] text-muted">Admins</div>
+            <div class="mt-2 text-xl font-fredoka text-cream">Roster</div>
+
+            {#if admins.length === 0}
+              <div
+                class="mt-6 rounded-2xl border border-dashed border-white/20 p-6 text-center text-sm text-muted"
+              >
+                No admins yet.
+              </div>
+            {:else}
+              <div class="mt-6 space-y-4">
+                {#each admins as admin (admin.userId)}
+                  <div class="rounded-2xl border border-white/10 bg-black/50 p-4">
+                    <div class="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div class="text-sm font-semibold text-cream">{admin.userId}</div>
+                        <div class="mt-2 flex flex-wrap gap-2 text-xs">
+                          <span
+                            class={`rounded-full border px-2 py-1 ${
+                              admin.role === 'superadmin'
+                                ? 'border-amber-300/40 bg-amber-400/20 text-amber-200'
+                                : 'border-green/40 bg-green/20 text-green'
+                            }`}>{admin.role}</span
+                          >
+                          <span
+                            class="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-muted"
+                            >Added: {formatDate(admin.createdAt)}</span
+                          >
+                          {#if admin.createdBy}
+                            <span
+                              class="rounded-full border border-white/10 bg-white/5 px-2 py-1 text-muted"
+                              >By: {admin.createdBy}</span
+                            >
+                          {/if}
+                        </div>
+                      </div>
+                      <div class="flex flex-wrap gap-2">
+                        {#if admin.role === 'moderator'}
+                          <button
+                            class="rounded-full border border-amber-300/40 bg-amber-400/20 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-amber-200"
+                            on:click={() => handleUpdateAdminRole(admin.userId, 'superadmin')}
+                          >
+                            Promote
+                          </button>
+                        {:else}
+                          <button
+                            class="rounded-full border border-green/40 bg-green/20 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-green"
+                            on:click={() => handleUpdateAdminRole(admin.userId, 'moderator')}
+                          >
+                            Demote
+                          </button>
+                        {/if}
+                        <button
+                          class="rounded-full border border-fox/40 bg-fox/20 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-fox"
+                          on:click={() => handleRemoveAdmin(admin.userId)}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        </section>
+      {/if}
     {/if}
-  {/if}
+  </div>
 </div>
-
-<style>
-  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700;9..144,900&family=Space+Grotesk:wght@400;500;600;700&display=swap');
-
-  :global(:root) {
-    --ink-900: #0b1110;
-    --ink-800: #0f1715;
-    --ink-700: #15211f;
-    --mint-200: #c7f7e7;
-    --mint-300: #8fe8cd;
-    --mint-400: #62d4b2;
-    --sun-300: #ffd18b;
-    --sun-400: #ffb457;
-    --ember-400: #ff6a3d;
-    --ember-500: #ff4d2e;
-    --lav-400: #b8a4ff;
-    --slate-300: #9fb3ad;
-    --slate-200: #b9c7c2;
-  }
-
-  :global(body) {
-    background: radial-gradient(1200px 800px at 10% -10%, rgba(98, 212, 178, 0.18), transparent 60%),
-      radial-gradient(900px 700px at 100% 0%, rgba(255, 180, 87, 0.14), transparent 55%),
-      linear-gradient(155deg, #0a1110 0%, #0f1917 45%, #0d1412 100%);
-    color: var(--mint-200);
-    font-family: 'Space Grotesk', system-ui, sans-serif;
-  }
-
-  :global(body)::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    background: linear-gradient(120deg, rgba(255, 255, 255, 0.03), transparent 40%),
-      repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 6px);
-    opacity: 0.6;
-    z-index: 0;
-  }
-
-  .admin-panel {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 28px 20px 60px;
-    font-family: 'Space Grotesk', system-ui, sans-serif;
-    min-height: 100vh;
-    position: relative;
-    z-index: 1;
-  }
-
-  .admin-panel::before {
-    content: '';
-    position: absolute;
-    inset: 60px 40px auto auto;
-    width: 220px;
-    height: 220px;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(255, 180, 87, 0.25), transparent 70%);
-    filter: blur(2px);
-    opacity: 0.7;
-    pointer-events: none;
-  }
-
-  .admin-subtitle {
-    text-align: center;
-    color: var(--slate-300);
-    margin: -16px auto 32px;
-    max-width: 520px;
-    font-size: 1rem;
-  }
-
-  h1 {
-    font-family: 'Fraunces', serif;
-    color: var(--sun-400);
-    margin-bottom: 34px;
-    text-align: center;
-    font-size: clamp(2.2rem, 3vw, 3rem);
-    font-weight: 900;
-    letter-spacing: 0.5px;
-    text-shadow: 0 8px 24px rgba(255, 106, 61, 0.3);
-  }
-
-  h2 {
-    font-family: 'Fraunces', serif;
-    color: var(--mint-200);
-    margin-top: 0;
-    margin-bottom: 22px;
-    font-size: 1.5em;
-    border-bottom: 2px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .login-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    min-height: 70vh;
-  }
-
-  .login-form {
-    background: rgba(15, 23, 21, 0.72);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(98, 212, 178, 0.2);
-    border-radius: 22px;
-    padding: 52px 42px;
-    width: 100%;
-    max-width: 420px;
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35);
-  }
-
-  .login-form h2 {
-    text-align: center;
-    color: var(--ember-400);
-    border: none;
-    font-family: 'Fraunces', serif;
-    margin-bottom: 30px;
-    font-size: 1.8em;
-  }
-
-  .admin-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: rgba(15, 23, 21, 0.65);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(98, 212, 178, 0.18);
-    border-radius: 20px;
-    padding: 18px 24px;
-    margin-bottom: 28px;
-  }
-
-  .user-info {
-    color: var(--mint-200);
-    font-weight: 500;
-    font-size: 1em;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .logout-btn {
-    padding: 10px 22px;
-    background: rgba(255, 106, 61, 0.16);
-    border: 1px solid rgba(255, 106, 61, 0.35);
-    color: var(--sun-300);
-    border-radius: 999px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: all 0.3s ease;
-  }
-
-  .logout-btn:hover {
-    background: rgba(255, 106, 61, 0.3);
-    border-color: rgba(255, 106, 61, 0.6);
-    transform: translateY(-1px);
-  }
-
-  .tabs {
-    display: flex;
-    gap: 12px;
-    margin-bottom: 25px;
-    border-bottom: 2px solid rgba(98, 212, 178, 0.12);
-    overflow-x: auto;
-    padding-bottom: 10px;
-  }
-
-  .report-tabs {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 18px;
-  }
-
-  .report-tab-btn {
-    padding: 8px 16px;
-    background: rgba(15, 23, 21, 0.7);
-    border: 1px solid rgba(98, 212, 178, 0.16);
-    color: var(--slate-300);
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 0.85em;
-    transition: all 0.3s ease;
-    border-radius: 999px;
-    white-space: nowrap;
-  }
-
-  .report-tab-btn:hover {
-    background: rgba(98, 212, 178, 0.12);
-    border-color: rgba(98, 212, 178, 0.35);
-    color: var(--mint-200);
-    transform: translateY(-1px);
-  }
-
-  .report-tab-btn.active {
-    background: linear-gradient(120deg, rgba(255, 106, 61, 0.35), rgba(255, 180, 87, 0.22));
-    border-color: rgba(255, 180, 87, 0.5);
-    color: #1a0f0b;
-  }
-
-  .admin-hero {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 24px;
-    padding: 20px 24px;
-    margin-bottom: 22px;
-    border-radius: 20px;
-    background: linear-gradient(120deg, rgba(15, 23, 21, 0.85), rgba(26, 40, 36, 0.7));
-    border: 1px solid rgba(98, 212, 178, 0.2);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
-  }
-
-  .hero-title {
-    font-family: 'Fraunces', serif;
-    font-size: 1.6rem;
-    font-weight: 800;
-    color: var(--mint-200);
-    margin-bottom: 6px;
-  }
-
-  .hero-subtitle {
-    color: var(--slate-300);
-    font-size: 0.95rem;
-  }
-
-  .hero-actions {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-
-  .ghost-btn {
-    padding: 10px 18px;
-    background: rgba(98, 212, 178, 0.1);
-    border: 1px solid rgba(98, 212, 178, 0.35);
-    color: var(--mint-200);
-    border-radius: 999px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.3s ease;
-  }
-
-  .ghost-btn:hover {
-    background: rgba(98, 212, 178, 0.2);
-    border-color: rgba(98, 212, 178, 0.5);
-    transform: translateY(-1px);
-  }
-
-  .stat-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
-    gap: 16px;
-    margin-bottom: 24px;
-  }
-
-  .stat-card {
-    display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 16px 18px;
-    border-radius: 18px;
-    background: rgba(12, 18, 17, 0.8);
-    border: 1px solid rgba(98, 212, 178, 0.18);
-  }
-
-  .stat-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 12px;
-    display: grid;
-    place-items: center;
-    background: rgba(255, 180, 87, 0.2);
-    color: #2a1609;
-    font-size: 1.1rem;
-  }
-
-  .stat-label {
-    font-size: 0.85rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--slate-300);
-  }
-
-  .stat-value {
-    font-size: 1.6rem;
-    font-weight: 700;
-    color: var(--mint-200);
-  }
-
-  .section-grid {
-    display: grid;
-    grid-template-columns: minmax(260px, 1fr) 1.2fr;
-    gap: 20px;
-    align-items: start;
-  }
-
-  .tab-btn {
-    padding: 12px 24px;
-    background: rgba(15, 23, 21, 0.7);
-    border: 1px solid rgba(98, 212, 178, 0.16);
-    color: var(--slate-300);
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 0.95em;
-    transition: all 0.3s ease;
-    border-radius: 999px;
-    white-space: nowrap;
-  }
-
-  .tab-btn:hover {
-    background: rgba(98, 212, 178, 0.12);
-    border-color: rgba(98, 212, 178, 0.35);
-    color: var(--mint-200);
-    transform: translateY(-1px);
-  }
-
-  .tab-btn.active {
-    background: linear-gradient(120deg, rgba(255, 106, 61, 0.35), rgba(255, 180, 87, 0.22));
-    border-color: rgba(255, 180, 87, 0.5);
-    color: #1a0f0b;
-  }
-
-  .section {
-    background: rgba(15, 23, 21, 0.72);
-    backdrop-filter: blur(10px);
-    border: 1px solid rgba(98, 212, 178, 0.16);
-    border-radius: 22px;
-    padding: 26px;
-    margin-bottom: 26px;
-    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
-  }
-
-  .error-message {
-    background: rgba(255, 106, 61, 0.14);
-    border: 1px solid rgba(255, 106, 61, 0.35);
-    color: var(--sun-300);
-    padding: 15px 18px;
-    border-radius: 12px;
-    margin-bottom: 18px;
-    font-weight: 500;
-  }
-
-  .success-message {
-    background: rgba(98, 212, 178, 0.14);
-    border: 1px solid rgba(98, 212, 178, 0.3);
-    color: var(--mint-200);
-    padding: 15px 18px;
-    border-radius: 12px;
-    margin-bottom: 18px;
-    font-weight: 500;
-  }
-
-  .loading {
-    text-align: center;
-    color: var(--slate-300);
-    padding: 40px;
-    font-size: 1.1em;
-    font-weight: 500;
-  }
-
-  form {
-    display: flex;
-    flex-direction: column;
-    gap: 18px;
-  }
-
-  .form-group {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  label {
-    color: var(--mint-200);
-    font-size: 0.85em;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  input,
-  textarea,
-  select {
-    padding: 12px 16px;
-    background: rgba(9, 14, 13, 0.75);
-    border: 1px solid rgba(98, 212, 178, 0.18);
-    color: var(--mint-200);
-    border-radius: 12px;
-    font-family: inherit;
-    font-size: 0.95em;
-    transition: all 0.3s ease;
-  }
-
-  input:focus,
-  textarea:focus,
-  select:focus {
-    outline: none;
-    border-color: rgba(255, 180, 87, 0.6);
-    box-shadow: 0 0 22px rgba(255, 180, 87, 0.18);
-  }
-
-  input:disabled,
-  textarea:disabled,
-  select:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  button {
-    padding: 12px 24px;
-    background: linear-gradient(120deg, rgba(255, 106, 61, 0.35), rgba(255, 180, 87, 0.25));
-    border: 1px solid rgba(255, 180, 87, 0.4);
-    color: #20110a;
-    border-radius: 12px;
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 1em;
-    transition: all 0.3s ease;
-  }
-
-  button:hover:not(:disabled) {
-    background: linear-gradient(120deg, rgba(255, 106, 61, 0.5), rgba(255, 180, 87, 0.4));
-    border-color: rgba(255, 180, 87, 0.7);
-    color: #1a0f0b;
-    transform: translateY(-1px);
-    box-shadow: 0 10px 22px rgba(0, 0, 0, 0.25);
-  }
-
-  button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .blocked-users-list,
-  .admins-list,
-  .reports-list {
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
-  }
-
-  .user-card,
-  .admin-card,
-  .report-card {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: rgba(12, 18, 17, 0.8);
-    border: 1px solid rgba(98, 212, 178, 0.14);
-    border-radius: 16px;
-    padding: 18px 20px;
-    gap: 15px;
-    transition: all 0.3s ease;
-  }
-
-  .user-card:hover,
-  .admin-card:hover,
-  .report-card:hover {
-    border-color: rgba(255, 180, 87, 0.4);
-    background: rgba(255, 180, 87, 0.07);
-    transform: translateY(-1px);
-  }
-
-  .user-id,
-  .admin-id,
-  .report-id {
-    font-weight: 600;
-    color: var(--sun-400);
-    margin-bottom: 6px;
-    word-break: break-all;
-    font-size: 1em;
-  }
-
-  .user-reason {
-    color: var(--slate-200);
-    font-size: 0.9em;
-    margin-bottom: 10px;
-  }
-
-  .user-details,
-  .admin-details {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    font-size: 0.85em;
-    flex-wrap: wrap;
-  }
-
-  .badge {
-    padding: 5px 12px;
-    border-radius: 20px;
-    font-size: 0.8em;
-    font-weight: 600;
-    display: inline-block;
-  }
-
-  .badge.permanent {
-    background: rgba(255, 106, 61, 0.2);
-    color: var(--sun-300);
-    border: 1px solid rgba(255, 106, 61, 0.4);
-  }
-
-  .badge.temporary {
-    background: rgba(255, 180, 87, 0.2);
-    color: #2d1b0e;
-    border: 1px solid rgba(255, 180, 87, 0.4);
-  }
-
-  .badge.role-superadmin {
-    background: rgba(184, 164, 255, 0.2);
-    color: var(--lav-400);
-    border: 1px solid rgba(184, 164, 255, 0.4);
-  }
-
-  .badge.role-moderator {
-    background: rgba(98, 212, 178, 0.18);
-    color: var(--mint-200);
-    border: 1px solid rgba(98, 212, 178, 0.4);
-  }
-
-  .timestamp {
-    color: var(--slate-300);
-    font-size: 0.85em;
-  }
-
-  .unblock-btn {
-    background: rgba(98, 212, 178, 0.2);
-    border: 1px solid rgba(98, 212, 178, 0.4);
-    color: var(--mint-200);
-    padding: 10px 16px;
-    font-size: 0.9em;
-    white-space: nowrap;
-    flex-shrink: 0;
-    border-radius: 999px;
-    cursor: pointer;
-    font-weight: 600;
-    transition: all 0.3s ease;
-  }
-
-  .unblock-btn:hover {
-    background: rgba(98, 212, 178, 0.35);
-    border-color: rgba(98, 212, 178, 0.6);
-    color: #0c1412;
-  }
-
-  .admin-actions {
-    display: flex;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-
-  .promote-btn,
-  .demote-btn,
-  .remove-btn {
-    padding: 10px 16px;
-    font-size: 0.9em;
-    white-space: nowrap;
-    border-radius: 999px;
-    border: 1px solid rgba(98, 212, 178, 0.2);
-    cursor: pointer;
-    font-weight: 600;
-    transition: all 0.3s ease;
-  }
-
-  .promote-btn {
-    background: rgba(184, 164, 255, 0.2);
-    border-color: rgba(184, 164, 255, 0.4);
-    color: var(--lav-400);
-  }
-
-  .promote-btn:hover {
-    background: rgba(184, 164, 255, 0.35);
-    border-color: rgba(184, 164, 255, 0.6);
-    color: #1a1026;
-  }
-
-  .demote-btn {
-    background: rgba(98, 212, 178, 0.2);
-    border-color: rgba(98, 212, 178, 0.4);
-    color: var(--mint-200);
-  }
-
-  .demote-btn:hover {
-    background: rgba(98, 212, 178, 0.35);
-    border-color: rgba(98, 212, 178, 0.6);
-    color: #0c1412;
-  }
-
-  .remove-btn {
-    background: rgba(255, 106, 61, 0.22);
-    border-color: rgba(255, 106, 61, 0.45);
-    color: var(--sun-300);
-  }
-
-  .remove-btn:hover {
-    background: rgba(255, 106, 61, 0.35);
-    border-color: rgba(255, 106, 61, 0.6);
-    color: #1a0f0b;
-  }
-
-  .no-data {
-    color: var(--slate-300);
-    text-align: center;
-    padding: 40px 20px;
-    font-size: 1.05em;
-  }
-
-  .report-card {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .report-header {
-    .report-item {
-      border: 1px solid rgba(98, 212, 178, 0.16);
-      border-radius: 16px;
-      background: rgba(12, 18, 17, 0.75);
-      overflow: hidden;
-    }
-
-    .report-summary {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      padding: 16px 18px;
-      cursor: pointer;
-      list-style: none;
-    }
-
-    .report-summary::-webkit-details-marker {
-      display: none;
-    }
-
-    .report-summary-left {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
-
-    .report-summary-right {
-      text-align: right;
-      color: var(--slate-300);
-      font-size: 0.85em;
-    }
-
-    .report-title {
-      font-weight: 600;
-      color: var(--mint-200);
-    }
-
-    .report-target {
-      color: var(--sun-300);
-      font-weight: 600;
-    }
-
-    .report-detail {
-      padding: 18px;
-      border-top: 1px solid rgba(98, 212, 178, 0.12);
-    }
-    .conversation-block {
-      margin-top: 18px;
-      padding: 14px 16px;
-      border-radius: 14px;
-      background: rgba(0, 0, 0, 0.35);
-      border: 1px solid rgba(98, 212, 178, 0.18);
-    }
-
-    .conversation-title {
-      font-weight: 600;
-      color: var(--mint-200);
-      margin-bottom: 10px;
-    }
-
-    .conversation-list {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      max-height: 280px;
-      overflow-y: auto;
-    }
-
-    .conversation-row {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .conversation-row-reported {
-      align-items: flex-end;
-    }
-
-    .conversation-row-other {
-      align-items: flex-start;
-    }
-
-    .conversation-meta {
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.75em;
-      color: var(--slate-300);
-      margin-bottom: 6px;
-      gap: 12px;
-    }
-
-    .conversation-sender {
-      color: var(--sun-300);
-      font-weight: 600;
-      word-break: break-all;
-    }
-
-    .conversation-bubble {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 12px;
-      border-radius: 14px;
-      font-size: 0.9em;
-      word-break: break-word;
-      max-width: 85%;
-      border: 1px solid rgba(98, 212, 178, 0.15);
-    }
-
-    .conversation-bubble-reported {
-      background: rgba(255, 106, 61, 0.18);
-      color: #2a1609;
-      border-color: rgba(255, 106, 61, 0.35);
-    }
-
-    .conversation-bubble-other {
-      background: rgba(15, 23, 21, 0.8);
-      color: var(--mint-200);
-    }
-
-    .conversation-type {
-      font-size: 0.75em;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--slate-300);
-    }
-
-    .conversation-text {
-      color: var(--mint-200);
-    }
-
-    .conversation-empty {
-      color: var(--slate-300);
-      font-size: 0.9em;
-    }
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 15px;
-    gap: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px solid rgba(98, 212, 178, 0.16);
-  }
-
-  .status-badge {
-    padding: 6px 14px;
-    border-radius: 20px;
-    font-size: 0.75em;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  .status-pending {
-    background: rgba(255, 193, 7, 0.15);
-    color: #ffd18b;
-    border: 1px solid rgba(255, 193, 7, 0.25);
-  }
-
-  .status-reviewed {
-    background: rgba(184, 164, 255, 0.2);
-    color: var(--lav-400);
-    border: 1px solid rgba(184, 164, 255, 0.4);
-  }
-
-  .status-actioned {
-    background: rgba(98, 212, 178, 0.2);
-    color: var(--mint-200);
-    border: 1px solid rgba(98, 212, 178, 0.4);
-  }
-
-  .status-dismissed {
-    background: rgba(159, 179, 173, 0.16);
-    color: var(--slate-200);
-    border: 1px solid rgba(159, 179, 173, 0.35);
-  }
-
-  .status-approved {
-    background: rgba(98, 212, 178, 0.2);
-    color: var(--mint-200);
-    border: 1px solid rgba(98, 212, 178, 0.4);
-  }
-
-  .status-rejected {
-    background: rgba(255, 106, 61, 0.2);
-    color: var(--sun-300);
-    border: 1px solid rgba(255, 106, 61, 0.4);
-  }
-
-  .report-section {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    margin-bottom: 12px;
-    font-size: 0.9em;
-  }
-
-  .report-label {
-    font-weight: 600;
-    color: var(--mint-200);
-    min-width: 130px;
-    flex-shrink: 0;
-    text-transform: uppercase;
-    font-size: 0.8em;
-    letter-spacing: 0.3px;
-  }
-
-  .report-value {
-    color: var(--slate-200);
-    word-break: break-all;
-  }
-
-  .report-code {
-    font-family: 'Courier New', monospace;
-    font-size: 0.8em;
-    background: rgba(0, 0, 0, 0.45);
-    padding: 4px 8px;
-    border-radius: 4px;
-    border: 1px solid rgba(98, 212, 178, 0.2);
-  }
-
-  .report-reason,
-  .report-message {
-    background: rgba(255, 180, 87, 0.12);
-    border-left: 4px solid rgba(255, 180, 87, 0.5);
-    padding: 12px;
-    border-radius: 6px;
-    color: #1a120d;
-    word-break: break-word;
-    white-space: pre-wrap;
-    margin-bottom: 10px;
-    font-size: 0.9em;
-  }
-
-  .report-details {
-    cursor: pointer;
-    margin-top: 10px;
-    border: 1px solid rgba(98, 212, 178, 0.18);
-    border-radius: 10px;
-    padding: 10px;
-    background: rgba(0, 0, 0, 0.35);
-  }
-
-  .report-details summary {
-    color: var(--mint-200);
-    cursor: pointer;
-    font-weight: 600;
-    user-select: none;
-    outline: none;
-  }
-
-  .report-meta-content {
-    background: rgba(0, 0, 0, 0.4);
-    padding: 12px;
-    border-radius: 10px;
-    overflow-x: auto;
-    font-size: 0.8em;
-    color: var(--slate-200);
-    margin-top: 10px;
-    border: 1px solid rgba(98, 212, 178, 0.2);
-  }
-
-  .report-actions {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-    padding-top: 12px;
-    border-top: 1px solid rgba(98, 212, 178, 0.16);
-  }
-
-  .action-btn {
-    padding: 10px 16px;
-    font-size: 0.9em;
-    white-space: nowrap;
-    border-radius: 999px;
-    border: 1px solid rgba(98, 212, 178, 0.2);
-    cursor: pointer;
-    font-weight: 600;
-    transition: all 0.3s ease;
-    background: rgba(15, 23, 21, 0.7);
-    color: var(--mint-200);
-  }
-
-  .action-btn:hover {
-    background: rgba(98, 212, 178, 0.2);
-    border-color: rgba(98, 212, 178, 0.45);
-  }
-
-  .btn-reviewed {
-    background: rgba(184, 164, 255, 0.22);
-    border-color: rgba(184, 164, 255, 0.45);
-    color: var(--lav-400);
-  }
-
-  .btn-reviewed:hover {
-    background: rgba(184, 164, 255, 0.35);
-    border-color: rgba(184, 164, 255, 0.6);
-  }
-
-  .btn-actioned {
-    background: rgba(98, 212, 178, 0.22);
-    border-color: rgba(98, 212, 178, 0.45);
-    color: var(--mint-200);
-  }
-
-  .btn-actioned:hover {
-    background: rgba(98, 212, 178, 0.35);
-    border-color: rgba(98, 212, 178, 0.6);
-  }
-
-  .btn-block {
-    background: rgba(255, 106, 61, 0.22);
-    border-color: rgba(255, 106, 61, 0.5);
-    color: var(--sun-300);
-  }
-
-  .btn-block:hover {
-    background: rgba(255, 106, 61, 0.35);
-    border-color: rgba(255, 106, 61, 0.7);
-  }
-
-  .btn-dismissed {
-    background: rgba(159, 179, 173, 0.2);
-    border-color: rgba(159, 179, 173, 0.4);
-    color: var(--slate-200);
-  }
-
-  .btn-dismissed:hover {
-    background: rgba(159, 179, 173, 0.35);
-    border-color: rgba(159, 179, 173, 0.55);
-  }
-
-  @media (max-width: 720px) {
-    .admin-hero {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-
-    .section-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .admin-header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 12px;
-    }
-
-    .user-card,
-    .admin-card {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-
-    .admin-actions {
-      width: 100%;
-      flex-wrap: wrap;
-    }
-  }
-</style>

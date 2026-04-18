@@ -25,7 +25,12 @@ import { syncBlockedUsersFromDb } from './blocklist.js';
 import { syncAdminsFromDb } from './adminManager.js';
 import { registerAdminHandlers } from './admin.js';
 import { authenticateAdmin, verifyAdminToken } from './adminAuth.js';
-import { submitAppeal } from './appeals.js';
+import {
+  submitAppeal,
+  updateAppealContent,
+  getAppealByUserReport,
+  getAppealById,
+} from './appeals.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'sneaky-fox-berry-secret-change-in-prod';
 const PORT = process.env.PORT || 3000;
@@ -111,7 +116,7 @@ app.get('/api/block-status', (req, res) => {
     const payload = token ? verifyToken(token) : null;
     const ip = req.ip;
 
-    const blockedUserId = payload?.userId || blockedIPs.get(ip||"") || '';
+    const blockedUserId = payload?.userId || blockedIPs.get(ip || '') || '';
     const block = blockedUserId ? blockedUser.get(blockedUserId) : null;
 
     if (!block) {
@@ -157,7 +162,68 @@ app.post('/api/appeal', async (req, res) => {
 
     res.json({ success: true, appealId });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: 'Failed to submit appeal' });
+    const message = String(err?.message || 'Failed to submit appeal');
+    const status = message.includes('already exists') ? 400 : 500;
+    res.status(status).json({ success: false, error: message });
+  }
+});
+
+// Get existing appeal for a report (current user)
+app.get('/api/appeal', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const payload = token ? verifyToken(token) : null;
+
+    if (!payload) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const reportId = String(req.query.reportId || '').trim();
+    if (!reportId) {
+      return res.status(400).json({ success: false, error: 'reportId is required' });
+    }
+
+    const appeal = await getAppealByUserReport(payload.userId, reportId);
+    if (!appeal) {
+      return res.json({ success: true, appeal: null });
+    }
+
+    return res.json({ success: true, appeal });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to load appeal' });
+  }
+});
+
+// Update an existing appeal (current user)
+app.put('/api/appeal', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+    const payload = token ? verifyToken(token) : null;
+
+    if (!payload) {
+      return res.status(401).json({ success: false, error: 'Unauthorized' });
+    }
+
+    const { appealId, reason, message } = req.body || {};
+    if (!appealId || !reason) {
+      return res.status(400).json({ success: false, error: 'Appeal ID and reason required' });
+    }
+
+    const appeal = await getAppealById(appealId);
+    if (!appeal || appeal.user_id !== payload.userId) {
+      return res.status(403).json({ success: false, error: 'Not allowed' });
+    }
+
+    if (appeal.status !== 'pending') {
+      return res.status(400).json({ success: false, error: 'Appeal can no longer be edited' });
+    }
+
+    await updateAppealContent(appealId, payload.userId, reason, message);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to update appeal' });
   }
 });
 

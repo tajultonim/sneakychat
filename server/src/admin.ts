@@ -10,8 +10,8 @@ import {
   getAllAdmins,
 } from './adminManager.js';
 import { verifyAdminToken } from './adminAuth.js';
-import { getAllReports, getPendingReports, updateReportStatus } from './reports.js';
-import { getAllAppeals, updateAppealStatus } from './appeals.js';
+import { deleteReport, getAllReports, getPendingReports, updateReportStatus } from './reports.js';
+import { deleteAppeal, getAllAppeals, getAppealById, updateAppealStatus } from './appeals.js';
 import type { Block } from './types.js';
 
 function checkAdminToken(socket: any): { valid: boolean; adminUserId?: string } {
@@ -53,13 +53,12 @@ function broadcastBlockedUsersUpdate(io: Server): void {
 export function registerAdminHandlers(io: Server): void {
   io.on('connection', (socket: any) => {
     // Get all blocked users
-    socket.on('admin:getBlockedUsers', (callback?: (data: any) => void) => {
+    socket.on('admin:getBlockedUsers', (data: any, callback?: (data: any) => void) => {
       const authCheck = checkAdminToken(socket);
       if (!authCheck.valid) {
         callback?.({ error: 'Not authorized' });
         return;
       }
-
       const blocked = getBlockedUsersList();
       callback?.({ data: blocked });
     });
@@ -89,6 +88,12 @@ export function registerAdminHandlers(io: Server): void {
           ip,
           reportId
         );
+
+        if (reportId) {
+          await updateReportStatus(reportId, 'actioned', authCheck.adminUserId);
+          const reports = await getAllReports();
+          io.emit('admin:reportsUpdated', { data: reports });
+        }
 
         console.log(`👮 Admin ${authCheck.adminUserId} blocked user ${userId}`);
         callback?.({
@@ -135,7 +140,7 @@ export function registerAdminHandlers(io: Server): void {
     });
 
     // Get all admins (superadmin only)
-    socket.on('admin:getAllAdmins', (callback?: (data: any) => void) => {
+    socket.on('admin:getAllAdmins', (data: any, callback?: (data: any) => void) => {
       const authCheck = checkAdminToken(socket);
       if (!authCheck.valid || !authCheck.adminUserId) {
         callback?.({ error: 'Not authorized' });
@@ -265,7 +270,7 @@ export function registerAdminHandlers(io: Server): void {
     });
 
     // Get all reports
-    socket.on('admin:getReports', async (callback?: (data: any) => void) => {
+    socket.on('admin:getReports', async (data: any, callback?: (data: any) => void) => {
       const authCheck = checkAdminToken(socket);
       if (!authCheck.valid || !authCheck.adminUserId) {
         callback?.({ error: 'Not authorized' });
@@ -296,7 +301,7 @@ export function registerAdminHandlers(io: Server): void {
           return;
         }
 
-        if (!['pending', 'reviewed', 'dismissed', 'actioned'].includes(status)) {
+        if (!['pending', 'dismissed', 'actioned'].includes(status)) {
           callback?.({ success: false, error: 'Invalid status' });
           return;
         }
@@ -314,8 +319,41 @@ export function registerAdminHandlers(io: Server): void {
       }
     });
 
+    // Delete report
+    socket.on('admin:deleteReport', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      if (!isSuperAdmin(authCheck.adminUserId)) {
+        callback?.({ success: false, error: 'Only superadmins can delete reports' });
+        return;
+      }
+
+      try {
+        const { reportId } = data;
+
+        if (!reportId) {
+          callback?.({ success: false, error: 'Report ID required' });
+          return;
+        }
+
+        await deleteReport(reportId);
+
+        console.log(`👮 Superadmin ${authCheck.adminUserId} deleted report ${reportId}`);
+        callback?.({ success: true, message: 'Report deleted' });
+
+        const reports = await getAllReports();
+        io.emit('admin:reportsUpdated', { data: reports });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
     // Get all appeals
-    socket.on('admin:getAppeals', async (callback?: (data: any) => void) => {
+    socket.on('admin:getAppeals', async (data: any, callback?: (data: any) => void) => {
       const authCheck = checkAdminToken(socket);
       if (!authCheck.valid || !authCheck.adminUserId) {
         callback?.({ error: 'Not authorized' });
@@ -353,8 +391,49 @@ export function registerAdminHandlers(io: Server): void {
 
         await updateAppealStatus(appealId, status, authCheck.adminUserId);
 
+        if (status === 'approved') {
+          const appeal = await getAppealById(appealId);
+          if (appeal?.user_id) {
+            await unblockUser(appeal.user_id);
+            broadcastBlockedUsersUpdate(io);
+          }
+        }
+
         console.log(`👮 Admin ${authCheck.adminUserId} updated appeal ${appealId} to ${status}`);
         callback?.({ success: true, message: `Appeal marked as ${status}` });
+
+        const appeals = await getAllAppeals();
+        io.emit('admin:appealsUpdated', { data: appeals });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Delete appeal
+    socket.on('admin:deleteAppeal', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      if (!isSuperAdmin(authCheck.adminUserId)) {
+        callback?.({ success: false, error: 'Only superadmins can delete appeals' });
+        return;
+      }
+
+      try {
+        const { appealId } = data;
+
+        if (!appealId) {
+          callback?.({ success: false, error: 'Appeal ID required' });
+          return;
+        }
+
+        await deleteAppeal(appealId);
+
+        console.log(`👮 Superadmin ${authCheck.adminUserId} deleted appeal ${appealId}`);
+        callback?.({ success: true, message: 'Appeal deleted' });
 
         const appeals = await getAllAppeals();
         io.emit('admin:appealsUpdated', { data: appeals });

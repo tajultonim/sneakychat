@@ -13,6 +13,19 @@ export async function submitAppeal(payload: AppealPayload): Promise<string> {
     const pool = await getPool();
     const appealId = uuid();
 
+    if (payload.reportId) {
+      const existing = await getAppealByUserReport(payload.userId, payload.reportId);
+      if (existing) {
+        await updateAppealContent(
+          existing.appeal_id,
+          payload.userId,
+          payload.reason,
+          payload.message
+        );
+        return existing.appeal_id;
+      }
+    }
+
     await pool
       .request()
       .input('appeal_id', appealId)
@@ -50,6 +63,65 @@ export async function getAllAppeals(): Promise<any[]> {
   }
 }
 
+export async function getAppealById(appealId: string): Promise<any | null> {
+  try {
+    const pool = await getPool();
+    const result = await pool
+      .request()
+      .input('appeal_id', appealId)
+      .query('SELECT TOP 1 * FROM appeals WHERE appeal_id = @appeal_id');
+
+    return result.recordset[0] || null;
+  } catch (err) {
+    console.error('❌ Failed to get appeal:', err);
+    throw err;
+  }
+}
+
+export async function getAppealByUserReport(userId: string, reportId: string): Promise<any | null> {
+  try {
+    const pool = await getPool();
+    const result = await pool
+      .request()
+      .input('user_id', userId)
+      .input('report_id', reportId)
+      .query(
+        'SELECT TOP 1 * FROM appeals WHERE user_id = @user_id AND report_id = @report_id ORDER BY created_at DESC'
+      );
+
+    return result.recordset[0] || null;
+  } catch (err) {
+    console.error('❌ Failed to get appeal by report:', err);
+    throw err;
+  }
+}
+
+export async function updateAppealContent(
+  appealId: string,
+  userId: string,
+  reason: string,
+  message?: string
+): Promise<void> {
+  try {
+    const pool = await getPool();
+
+    await pool
+      .request()
+      .input('appeal_id', appealId)
+      .input('user_id', userId)
+      .input('reason', reason)
+      .input('message', message || '')
+      .input('updated_at', Date.now()).query(`
+        UPDATE appeals
+        SET reason = @reason, message = @message, updated_at = @updated_at
+        WHERE appeal_id = @appeal_id AND user_id = @user_id AND status = 'pending'
+      `);
+  } catch (err) {
+    console.error('❌ Failed to update appeal:', err);
+    throw err;
+  }
+}
+
 export async function updateAppealStatus(
   appealId: string,
   status: 'pending' | 'approved' | 'rejected',
@@ -72,6 +144,24 @@ export async function updateAppealStatus(
     console.log(`📝 Appeal ${appealId} marked as ${status}`);
   } catch (err) {
     console.error('❌ Failed to update appeal:', err);
+    throw err;
+  }
+}
+
+/**
+ * Delete an appeal (admin only)
+ */
+export async function deleteAppeal(appealId: string): Promise<void> {
+  try {
+    const pool = await getPool();
+
+    await pool.request().input('appeal_id', appealId).query(`
+        DELETE FROM appeals WHERE appeal_id = @appeal_id
+      `);
+
+    console.log(`🗑️ Appeal ${appealId} deleted`);
+  } catch (err) {
+    console.error('❌ Failed to delete appeal:', err);
     throw err;
   }
 }

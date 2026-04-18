@@ -90,12 +90,20 @@ export async function initializeDatabase(): Promise<void> {
           reason NVARCHAR(500) NOT NULL,
           message_meta NVARCHAR(MAX),
           conversation_context NVARCHAR(MAX),
-          reported_at BIGINT NOT NULL,
+          created_at BIGINT NOT NULL,
           reviewed_at BIGINT,
           status NVARCHAR(50) NOT NULL DEFAULT 'pending',
           reviewed_by NVARCHAR(255)
         )
       END
+    `);
+    await pool.request().query(`
+      IF COL_LENGTH('reports', 'created_at') IS NULL
+        ALTER TABLE reports ADD created_at BIGINT
+    `);
+    await pool.request().query(`
+      IF COL_LENGTH('reports', 'reported_at') IS NOT NULL
+        ALTER TABLE reports DROP COLUMN reported_at
     `);
     console.log('📦 reports table ready');
 
@@ -111,6 +119,7 @@ export async function initializeDatabase(): Promise<void> {
           reason NVARCHAR(500) NOT NULL,
           message NVARCHAR(MAX),
           created_at BIGINT NOT NULL,
+          updated_at BIGINT,
           status NVARCHAR(50) NOT NULL DEFAULT 'pending',
           reviewed_by NVARCHAR(255),
           reviewed_at BIGINT
@@ -120,6 +129,14 @@ export async function initializeDatabase(): Promise<void> {
     await pool.request().query(`
       IF COL_LENGTH('appeals', 'report_id') IS NULL
         ALTER TABLE appeals ADD report_id NVARCHAR(255)
+    `);
+    await pool.request().query(`
+      IF COL_LENGTH('appeals', 'created_at') IS NULL
+        ALTER TABLE appeals ADD created_at BIGINT
+    `);
+    await pool.request().query(`
+      IF COL_LENGTH('appeals', 'updated_at') IS NULL
+        ALTER TABLE appeals ADD updated_at BIGINT
     `);
     console.log('📦 appeals table ready');
   } catch (err) {
