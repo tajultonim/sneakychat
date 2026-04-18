@@ -1021,8 +1021,11 @@
         <h2 class="text-xl font-fredoka text-cream mb-4">Report Message 🚩</h2>
 
         <div class="mb-4">
-          <label class="block text-sm text-cream font-semibold mb-2">Reason for reporting</label>
+          <label for="chat-report-reason" class="block text-sm text-cream font-semibold mb-2"
+            >Reason for reporting</label
+          >
           <textarea
+            id="chat-report-reason"
             bind:value={reportReason}
             placeholder="Why are you reporting this message?"
             class="w-full px-3 py-2 bg-[rgba(0,0,0,0.3)] border border-white/[.1] rounded-lg text-cream placeholder-gray-500 resize-none h-24 focus:outline-none focus:border-orange-500"

@@ -794,7 +794,7 @@
         response.timestamp && (timestamp = response.timestamp);
       }
     );
-
+ 
     // Handle text messages
     if (!e.type && e.text) {
       chatStore.addMessage(e.text, e.id, 'self', e.replyTo ?? undefined, timestamp ?? undefined);
@@ -984,18 +984,26 @@
           Status: {appealStatus}
         </div>
       {/if}
-      <label class="block text-xs font-bold uppercase tracking-[.06em] text-cream">Reason</label>
+      <label
+        for="appeal-reason"
+        class="block text-xs font-bold uppercase tracking-[.06em] text-cream">Reason</label
+      >
       <input
+        id="appeal-reason"
         class="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-cream outline-none"
         placeholder="Why should your block be lifted?"
         bind:value={appealReason}
         disabled={appealSubmitting}
       />
 
-      <label class="block text-xs font-bold uppercase tracking-[.06em] text-cream mt-4">
+      <label
+        for="appeal-details"
+        class="block text-xs font-bold uppercase tracking-[.06em] text-cream mt-4"
+      >
         Details
       </label>
       <textarea
+        id="appeal-details"
         class="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-cream outline-none h-24 resize-none"
         placeholder="Add any context"
         bind:value={appealMessage}

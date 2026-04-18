@@ -30,7 +30,7 @@ function loadRecentStickerIds(): string[] {
 const GITHUB_BASE =
   'https://media.githubusercontent.com/media/microsoft/fluentui-emoji-animated/refs/heads/main/assets/';
 
-export const stickerCollections = [
+export const stickerCollections: Sticker[] = [
   // Fluent Emoji Stickers - Animated (served directly from GitHub)
   {
     id: 'bangla-apnar-buddhi-valo',
@@ -163,16 +163,6 @@ export const stickerCollections = [
     url: `${GITHUB_BASE}/Angry%20face/animated/angry_face_animated.png`,
   },
   // Default Stickers - Static/Premium
-  {
-    id: 'default-fox-wink',
-    name: 'Fox Wink',
-    pack: 'default',
-    type: 'static' as const,
-    cost: 1,
-    premium: true,
-    url: '/stickers/default/fox-wink.png',
-    fallbackText: '🦊',
-  },
 ];
 
 export const stickers = writable<Sticker[]>(stickerCollections);

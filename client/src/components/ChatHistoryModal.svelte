@@ -349,6 +349,9 @@
                         : 'self-center text-[.73rem] text-center whitespace-pre-line text-berry-lt font-semibold px-3 py-1 bg-[rgba(124,58,237,.1)] rounded-full'
                   }
                 `}
+                role="button"
+                tabindex="0"
+                aria-label={msg.type === 'partner' ? 'Chat message actions' : 'Chat message'}
                 oncontextmenu={(e) =>
                   handleMessageContextMenu(e, msg.id, activeSession.chatId, canOpenMenu)}
                 ontouchstart={(e) => startLongPress(e, msg.id, activeSession.chatId, canOpenMenu)}
@@ -384,15 +387,6 @@
                         {msg.reaction}
                       </span>
                     {/if}
-                    {#if msg.type === 'partner'}
-                      <button
-                        class="text-red-400 hover:text-red-300 opacity-0 group-hover:opacity-70 transition-opacity cursor-pointer bg-none border-none p-0"
-                        onclick={() => openReportModal(msg.id, activeSession.chatId)}
-                        title="Report this message"
-                      >
-                        🚩
-                      </button>
-                    {/if}
                   </div>
                 {/if}
               </div>
@@ -406,13 +400,15 @@
 
 {#if longPressMenu}
   <button
-    class="fixed inset-0 z-40 bg-transparent border-0 cursor-default"
+    class="fixed inset-0 z-[60] bg-transparent border-0 cursor-default"
     aria-label="Close message actions"
     onclick={closeLongPressMenu}
+    onpointerdown={closeLongPressMenu}
+    ontouchstart={closeLongPressMenu}
   ></button>
   <div
     data-longpress-menu="true"
-    class="fixed z-50 min-w-[160px] overflow-hidden rounded-xl border border-white/[.14] bg-[rgba(14,28,14,.96)] shadow-[0_14px_34px_rgba(0,0,0,.45)]"
+    class="fixed z-[70] min-w-[160px] overflow-hidden rounded-xl border border-white/[.14] bg-[rgba(14,28,14,.96)] shadow-[0_14px_34px_rgba(0,0,0,.45)]"
     style={`left:${longPressMenu.x}px; top:${longPressMenu.y}px;`}
   >
     <button
@@ -445,8 +441,11 @@
       <h2 class="text-xl font-fredoka text-cream mb-4">Report Message 🚩</h2>
 
       <div class="mb-4">
-        <label class="block text-sm text-cream font-semibold mb-2">Reason for reporting</label>
+        <label for="report-reason" class="block text-sm text-cream font-semibold mb-2"
+          >Reason for reporting</label
+        >
         <textarea
+          id="report-reason"
           bind:value={reportReason}
           placeholder="Why are you reporting this message?"
           class="w-full px-3 py-2 bg-[rgba(0,0,0,0.3)] border border-white/[.1] rounded-lg text-cream placeholder-gray-500 resize-none h-24 focus:outline-none focus:border-orange-500"
