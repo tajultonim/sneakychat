@@ -15,7 +15,7 @@ let pool: sql.ConnectionPool | null = null;
 
 export async function initializeDatabase(): Promise<void> {
   try {
-    console.log('🔧 Connecting to:', config.server);
+    console.log('🔧 Connecting with:', config);
     pool = new sql.ConnectionPool(config);
     await pool.connect();
     console.log('✅ Database connected');
