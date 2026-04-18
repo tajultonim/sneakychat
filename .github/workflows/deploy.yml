@@ -20,10 +20,10 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: npm install, build in server directory
+      - name: npm ci, build in server directory
+        working-directory: server
         run: |
-          cd server
-          npm install
+          npm ci
           npm run build
 
       - name: Upload artifact for deployment job
