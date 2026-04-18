@@ -1221,10 +1221,11 @@
                                 isReported
                                   ? 'border-fox/40 bg-fox/20 text-cream'
                                   : 'border-white/10 bg-black/50 text-cream'
-                              } ${isFlagged ? 'ring-1 ring-red-500 ml-1' : ''}`}
+                              } ${isFlagged ? 'border-2 border-red-500 animate-pulse bg-transparent border-dashed ml-1' : ''}`}
                             >
                               <div class="text-[0.6rem] uppercase tracking-[0.2em] text-muted">
-                                {entry.type || 'message'} {entry.me}
+                                {entry.type || 'message'}
+                                {entry.me}
                               </div>
                               {#if entry.replyTo}
                                 <div
@@ -1252,10 +1253,12 @@
 
                   {#if selectedReport.message_meta}
                     {@const meta = parseMessageMeta(selectedReport.message_meta)}
-                    <div class="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm">
-                      <div class="text-xs font-bold uppercase tracking-[0.2em] text-muted">
+                    <details class="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm">
+                      <summary
+                        class="cursor-pointer text-xs font-bold uppercase tracking-[0.2em] text-muted"
+                      >
                         Message metadata
-                      </div>
+                      </summary>
                       {#if meta}
                         <div class="mt-4 grid gap-3 md:grid-cols-2">
                           <div class="rounded-xl border border-white/10 bg-black/60 p-3">
@@ -1336,7 +1339,7 @@
                           {selectedReport.message_meta}
                         </div>
                       {/if}
-                    </div>
+                    </details>
                   {/if}
 
                   <div class="flex flex-wrap justify-end gap-3">

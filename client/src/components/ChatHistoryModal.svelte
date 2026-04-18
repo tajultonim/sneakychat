@@ -198,12 +198,13 @@
   }
 
   async function submitReport(): Promise<void> {
-    if (!reportModal || !reportReason.trim() || isSubmittingReport) return;
+    const modal = reportModal;
+    if (!modal || !reportReason.trim() || isSubmittingReport) return;
 
     isSubmittingReport = true;
     try {
-      const session = sessions.find((s) => s.chatId === reportModal.chatId);
-      const msg = session?.messages.find((m) => m.id === reportModal.messageId);
+      const session = sessions.find((s) => s.chatId === modal.chatId);
+      const msg = session?.messages.find((m) => m.id === modal.messageId);
       const conversationEncryptedMeta = (session?.messages || [])
         .map((m) => m.meta)
         .filter((meta): meta is string => !!meta);
@@ -213,8 +214,8 @@
       socket.emit(
         'report:message',
         {
-          chatId: reportModal.chatId,
-          messageId: reportModal.messageId,
+          chatId: modal.chatId,
+          messageId: modal.messageId,
           messageText: msg.text || '',
           reason: reportReason,
           encryptedMeta: msg.meta,
@@ -399,6 +400,7 @@
 {/if}
 
 {#if longPressMenu}
+  {@const menu = longPressMenu}
   <button
     class="fixed inset-0 z-[60] bg-transparent border-0 cursor-default"
     aria-label="Close message actions"
@@ -409,22 +411,22 @@
   <div
     data-longpress-menu="true"
     class="fixed z-[70] min-w-[160px] overflow-hidden rounded-xl border border-white/[.14] bg-[rgba(14,28,14,.96)] shadow-[0_14px_34px_rgba(0,0,0,.45)]"
-    style={`left:${longPressMenu.x}px; top:${longPressMenu.y}px;`}
+    style={`left:${menu.x}px; top:${menu.y}px;`}
   >
     <button
       class="w-full text-left px-3.5 py-2.5 text-[.86rem] text-cream font-nunito hover:bg-white/[.08] transition-colors border-0 bg-transparent cursor-pointer"
       onclick={() => {
-        copyMessageText(longPressMenu.messageId);
+        copyMessageText(menu.messageId);
         closeLongPressMenu();
       }}
     >
       Copy
     </button>
-    {#if activeSession?.messages.find((m) => m.id === longPressMenu.messageId)?.type === 'partner'}
+    {#if activeSession?.messages.find((m) => m.id === menu.messageId)?.type === 'partner'}
       <button
         class="w-full text-left px-3.5 py-2.5 text-[.86rem] text-red-400 font-nunito hover:bg-white/[.08] transition-colors border-0 bg-transparent cursor-pointer"
         onclick={() => {
-          openReportModal(longPressMenu.messageId, longPressMenu.chatId);
+          openReportModal(menu.messageId, menu.chatId);
           closeLongPressMenu();
         }}
       >

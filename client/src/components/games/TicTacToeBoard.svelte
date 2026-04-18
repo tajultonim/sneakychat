@@ -54,7 +54,7 @@
 </script>
 
 <div class="flex flex-col items-center gap-2 text-white">
-  {#if gameState}
+  {#if gameState && $activeGame}
     <!-- Status Area -->
     <div class="flex flex-col items-center gap-3 w-full">
       {#if gameState.isFinished}

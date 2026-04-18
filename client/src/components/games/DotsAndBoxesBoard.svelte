@@ -19,6 +19,25 @@
 
   $: isPlayer1 = $activeGame?.players[0] === $myuserId;
 
+  $: myPlayerId = $activeGame
+    ? $activeGame.players[0] == $myuserId
+      ? $activeGame.players[0]
+      : $activeGame.players[1] == $myuserId
+        ? $activeGame.players[1]
+        : undefined
+    : undefined;
+
+  $: theirPlayerId = $activeGame
+    ? myPlayerId
+      ? $activeGame.players.find((playerId) => playerId !== myPlayerId)
+      : undefined
+    : undefined;
+
+  function getScoreForPlayer(playerId?: string): number {
+    if (!playerId) return 0;
+    return gameState?.scores?.[playerId] ?? 0;
+  }
+
   function handleLineClick(type: 'horizontal' | 'vertical', row: number, col: number) {
     if (!$activeGame || $activeGame.gameType !== 'dotsAndBoxes') return;
     if ($activeGame.isFinished) return;
@@ -59,7 +78,7 @@
 
 <div class="flex flex-col items-center gap-6 w-full max-w-2xl mx-auto">
   <div class="w-full">
-    {#if gameState}
+    {#if gameState && $activeGame}
       <div
         class="rounded-2xl border border-white/[0.14] bg-[linear-gradient(165deg,rgba(35,50,35,0.9),rgba(16,22,16,0.95))] shadow-[0_20px_50px_rgba(0,0,0,0.45)] p-4"
       >
@@ -76,13 +95,7 @@
             <p class="text-xs uppercase tracking-widest text-white/60 mb-2">You</p>
             <p class="text-3xl font-bold text-[#FFE1C7]">
               {$activeGame.players[0] == $myuserId ? '🔴' : '🟡'}
-              {gameState.scores?.[
-                $activeGame?.players[0] == $myuserId
-                  ? $activeGame?.players[0]
-                  : $activeGame?.players[1] == $myuserId
-                    ? $activeGame?.players[1]
-                    : null
-              ] || 0}
+              {getScoreForPlayer(myPlayerId)}
             </p>
           </div>
           <div
@@ -95,13 +108,8 @@
           >
             <p class="text-xs uppercase tracking-widest text-white/60 mb-2">Them</p>
             <p class="text-3xl font-bold text-[#FFE1C7]">
-              {$activeGame.players[1] == $myuserId ? '🔴' : '🟡'}{gameState.scores?.[
-                $activeGame?.players[0] == $myuserId
-                  ? $activeGame?.players[1]
-                  : $activeGame?.players[1] == $myuserId
-                    ? $activeGame?.players[0]
-                    : null
-              ] || 0}
+              {$activeGame.players[1] == $myuserId ? '🔴' : '🟡'}
+              {getScoreForPlayer(theirPlayerId)}
             </p>
           </div>
         </div>

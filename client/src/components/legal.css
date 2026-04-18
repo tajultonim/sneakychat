@@ -1,10 +1,12 @@
-@tailwind components;
+@config "../../tailwind.config.js";
+@reference "tailwindcss";
+@tailwind utilities;
 
 * {
     user-select: text !important;
 }
 
-@layer components {
+@layer utilities {
 
     /* Nav */
     .top-nav {
