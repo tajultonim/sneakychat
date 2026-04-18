@@ -23,8 +23,8 @@ jobs:
       - name: npm install, build in server directory
         working-directory: server
         run: |
-          npm ci
-          npm run build
+          npm ci --workspaces=false
+          npm run build --workspaces=false
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
