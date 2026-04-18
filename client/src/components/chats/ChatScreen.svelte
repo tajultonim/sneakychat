@@ -252,11 +252,12 @@
   }
 
   async function submitReport(): Promise<void> {
-    if (!reportModal || !reportReason.trim() || isSubmittingReport) return;
+    const modal = reportModal;
+    if (!modal || !reportReason.trim() || isSubmittingReport) return;
 
     isSubmittingReport = true;
     try {
-      const msg = $messages.find((m) => m.id === reportModal.messageId);
+      const msg = $messages.find((m) => m.id === modal.messageId);
       if (!msg) return;
 
       const conversationEncryptedMeta = $messages
@@ -270,7 +271,7 @@
         'report:message',
         {
           chatId: activeChatId || 'unknown',
-          messageId: reportModal.messageId,
+          messageId: modal.messageId,
           reason: reportReason,
           encryptedMeta: msg.meta,
           conversationEncryptedMeta,
@@ -695,7 +696,7 @@
                 : '⏳'}</span
             >
             <span
-              class={` ${msg.reaction ? '' : 'hidden'} inline-block px-1 py-[1px] border rounded-full border-white/[.06] ${msg.type == 'self' ? 'bg-[#db530f]/10' : 'bg-[#2C352B] text-cream'} `}
+              class={` ${!msg.reaction ? 'hidden' : 'inline-block'}  px-1 py-px border rounded-full border-white/6 ${msg.type == 'self' ? 'bg-[#db530f]/10' : 'bg-[#2C352B] text-cream'} `}
               >{msg.reaction}</span
             >
           </span>
@@ -770,28 +771,36 @@
     >
       <button
         class="w-full text-left px-3.5 py-2.5 text-[.86rem] text-cream font-nunito hover:bg-white/[.08] transition-colors border-0 bg-transparent cursor-pointer"
-        onclick={() => copyTextToClipboard(longPressMenu.text)}
+        onclick={() => {
+          if (!longPressMenu) return;
+          copyTextToClipboard(longPressMenu.text);
+        }}
       >
         Copy
       </button>
       <button
         class="w-full text-left px-3.5 py-2.5 text-[.86rem] text-cream font-nunito hover:bg-white/[.08] transition-colors border-0 bg-transparent cursor-pointer"
-        onclick={() => replyFromLongPress(longPressMenu.messageId)}
+        onclick={() => {
+          if (!longPressMenu) return;
+          replyFromLongPress(longPressMenu.messageId);
+        }}
       >
         Reply
       </button>
-      {#if longPressMenu && $messages.find((m) => m.id === longPressMenu.messageId)?.type === 'partner'}
+      {#if $messages.find((m) => m.id === longPressMenu?.messageId)?.type === 'partner'}
         <button
           class="w-full text-left px-3.5 py-2.5 text-[.86rem] text-red-400 font-nunito hover:bg-white/[.08] transition-colors border-0 bg-transparent cursor-pointer"
           onclick={() => {
-            const msg = $messages.find((m) => m.id === longPressMenu.messageId);
+            const menu = longPressMenu;
+            if (!menu) return;
+            const msg = $messages.find((m) => m.id === menu.messageId);
             if (msg && msg.meta) {
               const metaStr = msg.meta;
               try {
                 // Try to extract user ID from meta if needed, otherwise use a default
-                openReportModal(longPressMenu.messageId, 'unknown-user');
+                openReportModal(menu.messageId, 'unknown-user');
               } catch {
-                openReportModal(longPressMenu.messageId, 'unknown-user');
+                openReportModal(menu.messageId, 'unknown-user');
               }
             }
           }}
@@ -883,7 +892,7 @@
         bind:this={inputEl}
         oninput={() => {
           resizeInput();
-          if (isTyping) {
+          if (typingTimer) {
             clearTimeout(typingTimer);
           } else {
             socket.emit('typing', { isTyping: true });

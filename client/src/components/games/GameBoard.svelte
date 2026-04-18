@@ -49,7 +49,7 @@
   });
 </script>
 
-{#if gameType}
+{#if gameType && $activeGame}
   {#if $gameSize === 'minimized'}
     <!-- Minimized View -->
     <div

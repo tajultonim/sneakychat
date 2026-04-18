@@ -3,10 +3,10 @@
   import { activeGame, gameNames } from '$stores/gameStore';
   import { myuserId } from '$stores/userStore';
 
-  $: myChoice = null;
+  let myChoice: 'rock' | 'paper' | 'scissors' | null = null;
   let lastGameId: string | null = null;
 
-  $: gameState = $activeGame.state as any;
+  $: gameState = $activeGame ? ($activeGame.state as any) : null;
 
   $: if ($activeGame && $activeGame.gameType === 'rockPaperScissors') {
     // Only reset when a NEW game starts (gameId changed)
@@ -97,7 +97,7 @@
         class="w-full max-w-[430px] rounded-2xl border border-white/[0.12] bg-[linear-gradient(165deg,rgba(22,34,22,0.95),rgba(10,16,10,0.98))] p-5 text-center"
       >
         <p
-          class={`text-xl font-extrabold mb-5 text-[#F8F3E6] ${($activeGame as any).state?.result?.winner === $myuserId ? 'animate-bounce' : 'animate-opacityof'}`}
+          class={`text-xl font-extrabold mb-5 text-[#F8F3E6] ${gameState?.result?.winner === $myuserId ? 'animate-bounce' : 'animate-opacityof'}`}
         >
           {getResultMessage(gameState)}
         </p>

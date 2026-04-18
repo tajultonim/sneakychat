@@ -36,7 +36,7 @@
 
 <div class="flex flex-col items-center gap-6 w-full max-w-lg mx-auto">
   <div class="w-full">
-    {#if gameState}
+    {#if gameState && $activeGame}
       <!-- Status section -->
       <div
         class="w-full mb-2 rounded-xl border border-white/[0.12] bg-gradient-to-r from-white/[0.07] to-cyan-500/[0.06] p-4 text-center"

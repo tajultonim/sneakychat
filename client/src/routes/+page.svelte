@@ -794,7 +794,7 @@
         response.timestamp && (timestamp = response.timestamp);
       }
     );
- 
+
     // Handle text messages
     if (!e.type && e.text) {
       chatStore.addMessage(e.text, e.id, 'self', e.replyTo ?? undefined, timestamp ?? undefined);
@@ -1023,7 +1023,7 @@
           on:click={submitAppeal}
           disabled={!appealReason.trim() ||
             appealSubmitting ||
-            (appealStatus && appealStatus !== 'pending')}
+            (appealStatus ? appealStatus !== 'pending' : false)}
         >
           {appealSubmitting ? 'Submitting...' : appealId ? 'Update Appeal' : 'Submit Appeal'}
         </button>
