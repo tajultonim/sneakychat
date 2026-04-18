@@ -19,6 +19,13 @@
   let reportModal: { messageId: string; chatId: string } | null = null;
   let reportReason = '';
   let isSubmittingReport = false;
+  let longPressMenu: { messageId: string; chatId: string; x: number; y: number } | null = null;
+  let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let longPressStartX = 0;
+  let longPressStartY = 0;
+
+  const LONG_PRESS_DELAY = 450;
+  const LONG_PRESS_MOVE_TOLERANCE = 10;
 
   $: if (visible) {
     sessions = chatStore.getArchivedChatHistory().filter((s) => {
@@ -111,6 +118,79 @@
     reportReason = '';
   }
 
+  function clearLongPressTimer(): void {
+    if (!longPressTimer) return;
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+
+  function closeLongPressMenu(): void {
+    longPressMenu = null;
+  }
+
+  function openMessageActionMenu(messageId: string, chatId: string, x: number, y: number): void {
+    const menuWidth = 160;
+    const menuHeight = 96;
+    const maxX = typeof window !== 'undefined' ? window.innerWidth : 0;
+    const maxY = typeof window !== 'undefined' ? window.innerHeight : 0;
+    const menuX = Math.max(12, Math.min(x, maxX - menuWidth - 12));
+    const menuY = Math.max(12, Math.min(y, maxY - menuHeight - 12));
+    longPressMenu = { messageId, chatId, x: menuX, y: menuY };
+  }
+
+  function startLongPress(
+    event: TouchEvent,
+    messageId: string,
+    chatId: string,
+    canOpenMenu: boolean
+  ): void {
+    if (!canOpenMenu || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    longPressStartX = touch.clientX;
+    longPressStartY = touch.clientY;
+    clearLongPressTimer();
+
+    longPressTimer = setTimeout(() => {
+      openMessageActionMenu(messageId, chatId, touch.clientX, touch.clientY - 16);
+    }, LONG_PRESS_DELAY);
+  }
+
+  function handleLongPressMove(event: TouchEvent): void {
+    if (!longPressTimer || event.touches.length !== 1) return;
+    const touch = event.touches[0];
+    const deltaX = Math.abs(touch.clientX - longPressStartX);
+    const deltaY = Math.abs(touch.clientY - longPressStartY);
+    if (deltaX > LONG_PRESS_MOVE_TOLERANCE || deltaY > LONG_PRESS_MOVE_TOLERANCE) {
+      clearLongPressTimer();
+    }
+  }
+
+  function endLongPress(): void {
+    clearLongPressTimer();
+  }
+
+  function handleMessageContextMenu(
+    event: MouseEvent,
+    messageId: string,
+    chatId: string,
+    canOpenMenu: boolean
+  ): void {
+    event.preventDefault();
+    if (!canOpenMenu) return;
+    openMessageActionMenu(messageId, chatId, event.clientX, event.clientY);
+  }
+
+  async function copyMessageText(messageId: string): Promise<void> {
+    const msg = activeSession?.messages.find((m) => m.id === messageId);
+    const text = msg?.text || '';
+    if (!text.trim() || typeof navigator === 'undefined') return;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Ignore clipboard failures silently
+    }
+  }
+
   function closeReportModal(): void {
     reportModal = null;
     reportReason = '';
@@ -168,7 +248,7 @@
     <button
       class="absolute inset-0 bg-black/70 border-0"
       aria-label="Close chat history"
-      on:click={closeModal}
+      onclick={closeModal}
     ></button>
 
     <div
@@ -184,14 +264,14 @@
           <div class="flex items-center gap-2">
             <button
               class="text-[.72rem] sm:text-[.75rem] px-2.5 py-1 rounded-lg border border-red-400/25 text-red-200 bg-red-500/10 hover:bg-red-500/20 transition-colors"
-              on:click={clearAllChats}
+              onclick={clearAllChats}
               disabled={!sessions.length}
             >
               Delete all
             </button><button
               class="sm:hidden text-[.72rem] px-2.5 py-1 rounded-lg border border-white/[.1] text-cream bg-white/[.06] hover:bg-white/[.1] transition-colors"
               aria-label="Close chat history"
-              on:click={closeModal}
+              onclick={closeModal}
             >
               ✕
             </button>
@@ -205,7 +285,7 @@
             {#each sessions as s}
               <button
                 class={`w-full text-left rounded-xl px-2.5 sm:px-3 py-2.5 mb-1.5 border transition-colors ${activeChatId === s.chatId ? 'bg-fox/20 border-fox/45' : 'bg-white/[.02] border-white/[.07] hover:bg-white/[.05]'}`}
-                on:click={() => openChat(s.chatId)}
+                onclick={() => openChat(s.chatId)}
               >
                 <div class="text-[.76rem] text-leaf-lt">
                   {formatDate(s.lastTextAt || s.startedAt)}
@@ -238,7 +318,7 @@
             {#if activeSession}
               <button
                 class="text-[.72rem] sm:text-[.75rem] px-2.5 py-1 rounded-lg border border-red-400/25 text-red-200 bg-red-500/10 hover:bg-red-500/20 transition-colors"
-                on:click={() => deleteChat(activeSession.chatId)}
+                onclick={() => deleteChat(activeSession.chatId)}
               >
                 Delete
               </button>
@@ -246,7 +326,7 @@
             <button
               class="hidden sm:inline-flex text-[.72rem] sm:text-[.75rem] px-2.5 py-1 rounded-lg border border-white/[.1] text-cream bg-white/[.06] hover:bg-white/[.1] transition-colors"
               aria-label="Close chat history"
-              on:click={closeModal}
+              onclick={closeModal}
             >
               ✕
             </button>
@@ -258,6 +338,7 @@
             <div class="text-sm text-muted">No chat selected.</div>
           {:else}
             {#each activeSession.messages as msg (msg.id)}
+              {@const canOpenMenu = msg.type !== 'system'}
               <div
                 class={`
                   ${
@@ -268,6 +349,12 @@
                         : 'self-center text-[.73rem] text-center whitespace-pre-line text-berry-lt font-semibold px-3 py-1 bg-[rgba(124,58,237,.1)] rounded-full'
                   }
                 `}
+                oncontextmenu={(e) =>
+                  handleMessageContextMenu(e, msg.id, activeSession.chatId, canOpenMenu)}
+                ontouchstart={(e) => startLongPress(e, msg.id, activeSession.chatId, canOpenMenu)}
+                ontouchmove={handleLongPressMove}
+                ontouchend={endLongPress}
+                ontouchcancel={endLongPress}
               >
                 {#if msg.sticker}
                   <div class="flex flex-col items-start gap-1.5">
@@ -275,7 +362,7 @@
                       src={msg.sticker.url}
                       alt={msg.sticker.name}
                       class="w-[100px] h-[100px] object-contain"
-                      on:error={(e) => {
+                      onerror={(e) => {
                         const img = e.target as HTMLImageElement;
                         img.style.display = 'none';
                       }}
@@ -300,7 +387,7 @@
                     {#if msg.type === 'partner'}
                       <button
                         class="text-red-400 hover:text-red-300 opacity-0 group-hover:opacity-70 transition-opacity cursor-pointer bg-none border-none p-0"
-                        on:click={() => openReportModal(msg.id, activeSession.chatId)}
+                        onclick={() => openReportModal(msg.id, activeSession.chatId)}
                         title="Report this message"
                       >
                         🚩
@@ -314,6 +401,40 @@
         </div>
       </div>
     </div>
+  </div>
+{/if}
+
+{#if longPressMenu}
+  <button
+    class="fixed inset-0 z-40 bg-transparent border-0 cursor-default"
+    aria-label="Close message actions"
+    onclick={closeLongPressMenu}
+  ></button>
+  <div
+    data-longpress-menu="true"
+    class="fixed z-50 min-w-[160px] overflow-hidden rounded-xl border border-white/[.14] bg-[rgba(14,28,14,.96)] shadow-[0_14px_34px_rgba(0,0,0,.45)]"
+    style={`left:${longPressMenu.x}px; top:${longPressMenu.y}px;`}
+  >
+    <button
+      class="w-full text-left px-3.5 py-2.5 text-[.86rem] text-cream font-nunito hover:bg-white/[.08] transition-colors border-0 bg-transparent cursor-pointer"
+      onclick={() => {
+        copyMessageText(longPressMenu.messageId);
+        closeLongPressMenu();
+      }}
+    >
+      Copy
+    </button>
+    {#if activeSession?.messages.find((m) => m.id === longPressMenu.messageId)?.type === 'partner'}
+      <button
+        class="w-full text-left px-3.5 py-2.5 text-[.86rem] text-red-400 font-nunito hover:bg-white/[.08] transition-colors border-0 bg-transparent cursor-pointer"
+        onclick={() => {
+          openReportModal(longPressMenu.messageId, longPressMenu.chatId);
+          closeLongPressMenu();
+        }}
+      >
+        Report
+      </button>
+    {/if}
   </div>
 {/if}
 
@@ -336,14 +457,14 @@
       <div class="flex gap-3">
         <button
           class="flex-1 py-2 px-3 bg-[rgba(255,255,255,.1)] hover:bg-[rgba(255,255,255,.15)] rounded-lg text-cream border-0 cursor-pointer font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          on:click={closeReportModal}
+          onclick={closeReportModal}
           disabled={isSubmittingReport}
         >
           Cancel
         </button>
         <button
           class="flex-1 py-2 px-3 bg-red-600 hover:bg-red-700 rounded-lg text-white border-0 cursor-pointer font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          on:click={submitReport}
+          onclick={submitReport}
           disabled={!reportReason.trim() || isSubmittingReport}
         >
           {isSubmittingReport ? '⏳ Submitting...' : 'Submit Report'}

@@ -1224,7 +1224,7 @@
                               } ${isFlagged ? 'ring-1 ring-red-500 ml-1' : ''}`}
                             >
                               <div class="text-[0.6rem] uppercase tracking-[0.2em] text-muted">
-                                {entry.type || 'message'} {entry.messageId ? `#${entry.messageId}` : ''}
+                                {entry.type || 'message'} {entry.me}
                               </div>
                               {#if entry.replyTo}
                                 <div
