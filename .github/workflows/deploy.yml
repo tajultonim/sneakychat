@@ -20,12 +20,11 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: npm ci, build in server directory
+      - name: npm install, build in server directory
         working-directory: server
         run: |
           npm ci
           npm run build
-
       - name: Upload artifact for deployment job
         uses: actions/upload-artifact@v4
         with:
