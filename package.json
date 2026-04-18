@@ -26,6 +26,5 @@
     "socket.io"
   ],
   "author": "",
-  "license": "MIT",
-  "dependencies": {}
+  "license": "MIT"
 }
