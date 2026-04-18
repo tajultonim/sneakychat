@@ -1,8 +1,9 @@
 <script lang="ts">
   import { browser } from '$app/environment';
-  import { replaceState } from '$app/navigation';
+  import { afterNavigate, replaceState } from '$app/navigation';
   import { onDestroy, onMount } from 'svelte';
   import { connectSocket, socket } from '$lib/socket';
+  import { renderMarkdown } from '$lib/markdown';
 
   type TabKey = 'blocked' | 'admins' | 'reports' | 'appeals';
   type ReportStatusTab = 'all' | 'pending' | 'actioned' | 'dismissed';
@@ -49,6 +50,14 @@
   let selectedReportId = '';
   let selectedAppealId = '';
   let requestedTab: TabKey | null = null;
+  let noticeMarkdown = '';
+  let noticeCreatedAt: number | null = null;
+  let noticeCreatedBy = '';
+  let isSubmittingNotice = false;
+  let noticePreviewHtml = '';
+  let noticeExpireMode: 'none' | 'hours' | 'date' = 'none';
+  let noticeExpireHours = 24;
+  let noticeExpireDate = '';
 
   // Form state for blocking users
   let blockUserId = '';
@@ -116,7 +125,12 @@
   }
 
   onMount(() => {
-    initTabFromUrl();
+    let initialized = false;
+    afterNavigate(() => {
+      if (initialized) return;
+      initialized = true;
+      initTabFromUrl();
+    });
 
     const stored = browser ? localStorage.getItem('adminToken') : null;
     if (stored) {
@@ -318,6 +332,27 @@
       if (!appealsResponse?.error) {
         appeals = Array.isArray(appealsResponse?.data) ? appealsResponse.data : [];
       }
+
+      const noticeResponse = await emit('admin:getNotice');
+      if (!noticeResponse?.error) {
+        const notice = noticeResponse?.data;
+        if (notice?.content) {
+          noticeMarkdown = notice.content;
+          noticeCreatedAt = notice.created_at || null;
+          noticeCreatedBy = notice.created_by || '';
+          if (typeof notice.expires_at === 'number' && notice.expires_at > 0) {
+            noticeExpireMode = 'date';
+            noticeExpireDate = new Date(notice.expires_at).toISOString().slice(0, 16);
+          } else {
+            noticeExpireMode = 'none';
+            noticeExpireDate = '';
+          }
+        } else {
+          noticeMarkdown = '';
+          noticeCreatedAt = null;
+          noticeCreatedBy = '';
+        }
+      }
     } catch (err) {
       console.log(err);
       error = 'Admin panel timed out. Check the server connection.';
@@ -389,11 +424,23 @@
 
   $: selectedReport = reports.find((report) => getReportId(report) === selectedReportId) || null;
   $: selectedAppeal = appeals.find((appeal) => getAppealId(appeal) === selectedAppealId) || null;
+  $: noticePreviewHtml = renderMarkdown(noticeMarkdown);
 
   function handleUpdateReportStatus(reportId: string, newStatus: string): void {
     socket.emit('admin:updateReportStatus', { reportId, status: newStatus }, (response: any) => {
       if (response.success) {
         success = response.message || 'Report updated.';
+        reports = reports.map((report) =>
+          getReportId(report) === reportId
+            ? {
+                ...report,
+                status: newStatus,
+                reviewed_at: Date.now(),
+                reviewed_by: currentAdminUserId,
+              }
+            : report
+        );
+        sortReports();
       } else {
         error = response.error || 'Failed to update report.';
       }
@@ -404,8 +451,81 @@
     socket.emit('admin:updateAppealStatus', { appealId, status: newStatus }, (response: any) => {
       if (response.success) {
         success = response.message || 'Appeal updated.';
+        appeals = appeals.map((appeal) =>
+          getAppealId(appeal) === appealId
+            ? {
+                ...appeal,
+                status: newStatus,
+                reviewed_at: Date.now(),
+                reviewed_by: currentAdminUserId,
+              }
+            : appeal
+        );
       } else {
         error = response.error || 'Failed to update appeal.';
+      }
+    });
+  }
+
+  function handleSendNotice(): void {
+    if (!noticeMarkdown.trim()) {
+      error = 'Notice content is required.';
+      return;
+    }
+
+    let expiresAt: number | null = null;
+    if (noticeExpireMode === 'hours') {
+      const hours = Number(noticeExpireHours);
+      if (!Number.isFinite(hours) || hours <= 0) {
+        error = 'Expiration hours must be greater than 0.';
+        return;
+      }
+      expiresAt = Date.now() + hours * 60 * 60 * 1000;
+    } else if (noticeExpireMode === 'date') {
+      if (!noticeExpireDate) {
+        error = 'Expiration date is required.';
+        return;
+      }
+      const parsed = Date.parse(noticeExpireDate);
+      if (Number.isNaN(parsed)) {
+        error = 'Expiration date is invalid.';
+        return;
+      }
+      expiresAt = parsed;
+    }
+
+    isSubmittingNotice = true;
+    error = '';
+    success = '';
+
+    socket.emit('admin:setNotice', { content: noticeMarkdown, expiresAt }, (response: any) => {
+      isSubmittingNotice = false;
+      if (response.success) {
+        success = 'Notice sent.';
+        noticeCreatedAt = response.data?.created_at || Date.now();
+        noticeCreatedBy = response.data?.created_by || currentAdminUserId;
+      } else {
+        error = response.error || 'Failed to send notice.';
+      }
+    });
+  }
+
+  function handleClearNotice(): void {
+    if (!confirm('Clear the active notice?')) return;
+
+    isSubmittingNotice = true;
+    error = '';
+    success = '';
+
+    socket.emit('admin:clearNotice', {}, (response: any) => {
+      isSubmittingNotice = false;
+      if (response.success) {
+        success = 'Notice cleared.';
+        noticeMarkdown = '';
+        noticeCreatedAt = null;
+        noticeCreatedBy = '';
+      } else {
+        error = response.error || 'Failed to clear notice.';
       }
     });
   }
@@ -418,6 +538,7 @@
       if (response.success) {
         success = response.message || 'Report deleted.';
         error = '';
+        reports = reports.filter((report) => getReportId(report) !== reportId);
         if (selectedReportId === reportId) {
           selectedReportId = '';
         }
@@ -435,6 +556,7 @@
       if (response.success) {
         success = response.message || 'Appeal deleted.';
         error = '';
+        appeals = appeals.filter((appeal) => getAppealId(appeal) !== appealId);
         if (selectedAppealId === appealId) {
           selectedAppealId = '';
         }
@@ -788,6 +910,115 @@
           </div>
         </div>
       </div>
+
+      {#if isSuperAdmin}
+        <details class="mt-6 rounded-3xl border border-white/10 bg-black/40 p-6">
+          <summary
+            class="flex cursor-pointer list-none flex-wrap items-center justify-between gap-3"
+          >
+            <div>
+              <div class="text-xs uppercase tracking-[0.32em] text-muted">Broadcast</div>
+              <div class="text-xl font-fredoka text-cream">Markdown notice</div>
+            </div>
+            {#if noticeCreatedAt}
+              <div class="text-xs text-muted">
+                Last sent {formatDate(noticeCreatedAt)}
+                {#if noticeCreatedBy}
+                  · {noticeCreatedBy}
+                {/if}
+              </div>
+            {/if}
+          </summary>
+          <div class="mt-5 grid gap-4 lg:grid-cols-2">
+            <div class="space-y-3">
+              <textarea
+                class="min-h-[180px] w-full rounded-2xl border border-white/10 bg-black/50 px-4 py-3 text-sm text-cream outline-none focus:border-fox/50"
+                bind:value={noticeMarkdown}
+                placeholder="Write a markdown notice for all users..."
+                disabled={isSubmittingNotice}
+              ></textarea>
+              <div class="rounded-2xl border border-white/10 bg-black/50 p-3 text-sm">
+                <div class="text-xs uppercase tracking-[0.2em] text-muted">Expires</div>
+                <div class="mt-3 flex flex-wrap items-center gap-3">
+                  <label class="flex items-center gap-2 text-xs text-muted">
+                    <input
+                      type="radio"
+                      name="notice-expire"
+                      value="none"
+                      bind:group={noticeExpireMode}
+                      disabled={isSubmittingNotice}
+                    />
+                    No expiry
+                  </label>
+                  <label class="flex items-center gap-2 text-xs text-muted">
+                    <input
+                      type="radio"
+                      name="notice-expire"
+                      value="hours"
+                      bind:group={noticeExpireMode}
+                      disabled={isSubmittingNotice}
+                    />
+                    In hours
+                  </label>
+                  <label class="flex items-center gap-2 text-xs text-muted">
+                    <input
+                      type="radio"
+                      name="notice-expire"
+                      value="date"
+                      bind:group={noticeExpireMode}
+                      disabled={isSubmittingNotice}
+                    />
+                    On date/time
+                  </label>
+                </div>
+                {#if noticeExpireMode === 'hours'}
+                  <div class="mt-3">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      class="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-sm text-cream outline-none focus:border-fox/50"
+                      bind:value={noticeExpireHours}
+                      disabled={isSubmittingNotice}
+                      placeholder="Hours until expiry"
+                    />
+                  </div>
+                {/if}
+                {#if noticeExpireMode === 'date'}
+                  <div class="mt-3">
+                    <input
+                      type="datetime-local"
+                      class="w-full rounded-xl border border-white/10 bg-black/60 px-3 py-2 text-sm text-cream outline-none focus:border-fox/50"
+                      bind:value={noticeExpireDate}
+                      disabled={isSubmittingNotice}
+                    />
+                  </div>
+                {/if}
+              </div>
+              <div class="flex flex-wrap justify-end gap-3">
+                <button
+                  class="rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-muted"
+                  on:click={handleClearNotice}
+                  disabled={isSubmittingNotice}
+                >
+                  Clear
+                </button>
+                <button
+                  class="rounded-full border border-fox/40 bg-fox/20 px-4 py-2 text-xs font-bold uppercase tracking-[0.2em] text-fox"
+                  on:click={handleSendNotice}
+                  disabled={isSubmittingNotice}
+                >
+                  {isSubmittingNotice ? 'Sending...' : 'Send notice'}
+                </button>
+              </div>
+            </div>
+            <div class="rounded-2xl border border-white/10 bg-black/50 p-4 text-sm text-cream">
+              <div class="text-xs uppercase tracking-[0.2em] text-muted">Preview</div>
+              <div class="mt-3 leading-relaxed">{@html noticePreviewHtml}</div>
+            </div>
+          </div>
+        </details>
+      {/if}
 
       <div class="mt-8 flex flex-wrap gap-3">
         <button

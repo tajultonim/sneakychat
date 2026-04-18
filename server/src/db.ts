@@ -139,6 +139,30 @@ export async function initializeDatabase(): Promise<void> {
         ALTER TABLE appeals ADD updated_at BIGINT
     `);
     console.log('📦 appeals table ready');
+
+    // Create notices table
+    await pool.request().query(`
+      IF NOT EXISTS (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'notices')
+      BEGIN
+        CREATE TABLE notices (
+          id INT PRIMARY KEY IDENTITY(1,1),
+          notice_id NVARCHAR(255) NOT NULL UNIQUE,
+          content NVARCHAR(MAX) NOT NULL,
+          created_at BIGINT NOT NULL,
+          created_by NVARCHAR(255) NOT NULL,
+          is_active BIT NOT NULL DEFAULT 1
+        )
+      END
+    `);
+    await pool.request().query(`
+      IF COL_LENGTH('notices', 'is_active') IS NULL
+        ALTER TABLE notices ADD is_active BIT NOT NULL DEFAULT 1
+    `);
+    await pool.request().query(`
+      IF COL_LENGTH('notices', 'expires_at') IS NULL
+        ALTER TABLE notices ADD expires_at BIGINT NULL
+    `);
+    console.log('📦 notices table ready');
   } catch (err) {
     console.error('❌ Database connection failed:', err);
     throw err;

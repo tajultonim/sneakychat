@@ -31,6 +31,7 @@ import {
   getAppealByUserReport,
   getAppealById,
 } from './appeals.js';
+import { getActiveNotice } from './notices.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'sneaky-fox-berry-secret-change-in-prod';
 const PORT = process.env.PORT || 3000;
@@ -227,6 +228,16 @@ app.put('/api/appeal', async (req, res) => {
   }
 });
 
+// Get active notice (public)
+app.get('/api/notice', async (req, res) => {
+  try {
+    const notice = await getActiveNotice();
+    res.json({ success: true, notice });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: 'Failed to load notice' });
+  }
+});
+
 // Track broadcast time
 let trackedBroadcastTime = 0;
 
@@ -252,6 +263,20 @@ io.on('connection', (skt) => {
     activeChatId: foxData.activeChatId || null,
     userId: foxData.userId,
   });
+
+  getActiveNotice()
+    .then((notice) => {
+      if (notice?.content) {
+        socket.emit('notice', {
+          content: notice.content,
+          createdAt: notice.created_at,
+          expiresAt: notice.expires_at ?? null,
+        });
+      }
+    })
+    .catch(() => {
+      // ignore notice fetch errors
+    });
 
   if (trackedBroadcastTime + BROADCAST_INTERVAL < Date.now()) {
     broadcastOnlineCount(io);

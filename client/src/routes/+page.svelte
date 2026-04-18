@@ -15,6 +15,7 @@
   import { roomId } from '$stores/roomStore';
   import { gameProposal, activeGame } from '$stores/gameStore';
   import { get } from 'svelte/store';
+  import { renderMarkdown } from '$lib/markdown';
 
   import Fireflies from '$components/Fireflies.svelte';
   import Header from '$components/Header.svelte';
@@ -59,6 +60,10 @@
   let appealSubmitting = false;
   let appealSuccess = '';
   let appealError = '';
+  let noticeMarkdown = '';
+  let noticeCreatedAt: number | null = null;
+  let noticeExpiresAt: number | null = null;
+  let showNotice = true;
 
   $: {
     if (browser) {
@@ -79,6 +84,7 @@
     }
 
     fetchBlockStatus();
+    fetchNotice();
   });
 
   function formatBlockedUntil(): string {
@@ -88,7 +94,7 @@
       }
       return 'Unknown';
     }
-    return new Date(blockedUntil).toLocaleString();
+    return new Date(parseInt(blockedUntil.toString())).toLocaleString();
   }
 
   async function fetchBlockStatus(): Promise<void> {
@@ -192,6 +198,25 @@
     }
   }
 
+  async function fetchNotice(): Promise<void> {
+    try {
+      const res = await fetch(`${import.meta.env.VITE_SERVER_URL}/api/notice`);
+      const data = await res.json();
+      if (data?.success && data.notice?.content) {
+        noticeMarkdown = data.notice.content;
+        noticeCreatedAt = data.notice.created_at || null;
+        noticeExpiresAt = data.notice.expires_at || null;
+        showNotice = true;
+      } else {
+        noticeMarkdown = '';
+        noticeCreatedAt = null;
+        noticeExpiresAt = null;
+      }
+    } catch {
+      // Ignore notice fetch errors
+    }
+  }
+
   function openAppealModal(): void {
     appealReportId = blockReportId;
     appealError = '';
@@ -212,6 +237,7 @@
     sock.on('connect', () => {
       isConnected = true;
       fetchBlockStatus();
+      fetchNotice();
       if (screen == 'searching') {
         toastStore.add('🔄 Reconnected! Resuming search...');
         handleFindFox();
@@ -316,6 +342,24 @@
       if (err?.message?.toLowerCase()?.includes('blocked')) {
         isBlocked = true;
         fetchBlockStatus();
+      }
+    });
+
+    sock.on('notice', (d: unknown) => {
+      const { content, createdAt, expiresAt } = d as {
+        content: string;
+        createdAt?: number;
+        expiresAt?: number | null;
+      };
+      if (content) {
+        noticeMarkdown = content;
+        noticeCreatedAt = createdAt || Date.now();
+        noticeExpiresAt = typeof expiresAt === 'number' ? expiresAt : null;
+        showNotice = true;
+      } else {
+        noticeMarkdown = '';
+        noticeCreatedAt = null;
+        noticeExpiresAt = null;
       }
     });
 
@@ -850,6 +894,26 @@
       {#if appealError}
         <div class="text-xs text-red-200 mt-2">{appealError}</div>
       {/if}
+    </div>
+  {/if}
+
+  {#if noticeMarkdown && showNotice && (!noticeExpiresAt || noticeExpiresAt > Date.now())}
+    <div class="mb-4 rounded-2xl border border-amber-300/20 bg-amber-400/10 px-4 py-3 text-cream">
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <div class="text-sm font-bold uppercase tracking-[.06em] text-amber-200">Notice</div>
+        <button
+          class="rounded-full border border-white/20 bg-white/10 px-2.5 py-1 text-[0.6rem] font-bold uppercase tracking-[.1em] text-cream"
+          on:click={() => (showNotice = false)}
+        >
+          Dismiss
+        </button>
+      </div>
+      <div class="mt-2 text-sm leading-relaxed">{@html renderMarkdown(noticeMarkdown)}</div>
+      <!-- {#if noticeCreatedAt}
+        <div class="mt-2 text-xs text-amber-100">
+          Updated: {new Date(parseInt(noticeCreatedAt.toString())).toLocaleString()}
+        </div>
+      {/if} -->
     </div>
   {/if}
 

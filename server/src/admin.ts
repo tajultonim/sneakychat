@@ -12,6 +12,7 @@ import {
 import { verifyAdminToken } from './adminAuth.js';
 import { deleteReport, getAllReports, getPendingReports, updateReportStatus } from './reports.js';
 import { deleteAppeal, getAllAppeals, getAppealById, updateAppealStatus } from './appeals.js';
+import { clearNotice, getActiveNotice, setNotice } from './notices.js';
 import type { Block } from './types.js';
 
 function checkAdminToken(socket: any): { valid: boolean; adminUserId?: string } {
@@ -365,6 +366,79 @@ export function registerAdminHandlers(io: Server): void {
         callback?.({ data: appeals });
       } catch (err: any) {
         callback?.({ error: err.message || 'Failed to get appeals' });
+      }
+    });
+
+    // Get active notice
+    socket.on('admin:getNotice', async (data: any, callback?: (data: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ error: 'Not authorized' });
+        return;
+      }
+
+      try {
+        const notice = await getActiveNotice();
+        callback?.({ data: notice });
+      } catch (err: any) {
+        callback?.({ error: err.message || 'Failed to get notice' });
+      }
+    });
+
+    // Set notice
+    socket.on('admin:setNotice', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      if (!isSuperAdmin(authCheck.adminUserId)) {
+        callback?.({ success: false, error: 'Only superadmins can send notices' });
+        return;
+      }
+
+      try {
+        const { content, expiresAt } = data || {};
+        if (!content || typeof content !== 'string') {
+          callback?.({ success: false, error: 'Notice content is required' });
+          return;
+        }
+
+        const parsedExpiresAt =
+          typeof expiresAt === 'number' && Number.isFinite(expiresAt) ? expiresAt : null;
+
+        const notice = await setNotice(content, authCheck.adminUserId, parsedExpiresAt);
+        callback?.({ success: true, data: notice });
+        io.emit('notice', {
+          content: notice.content,
+          createdAt: notice.created_at,
+          expiresAt: notice.expires_at ?? null,
+        });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
+      }
+    });
+
+    // Clear notice
+    socket.on('admin:clearNotice', async (data: any, callback?: (response: any) => void) => {
+      const authCheck = checkAdminToken(socket);
+      if (!authCheck.valid || !authCheck.adminUserId) {
+        callback?.({ success: false, error: 'Not authorized' });
+        return;
+      }
+
+      if (!isSuperAdmin(authCheck.adminUserId)) {
+        callback?.({ success: false, error: 'Only superadmins can clear notices' });
+        return;
+      }
+
+      try {
+        await clearNotice();
+        callback?.({ success: true });
+        io.emit('notice', { content: '', createdAt: Date.now() });
+      } catch (err: any) {
+        callback?.({ success: false, error: err.message });
       }
     });
 
