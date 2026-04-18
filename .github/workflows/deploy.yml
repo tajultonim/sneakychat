@@ -23,8 +23,7 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: npm install, build in server directory
-        working-directory: /
+      - name: npm install and build server
         run: |
           npm ci
           npm run build:server
